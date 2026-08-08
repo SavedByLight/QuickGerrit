@@ -1,0 +1,106 @@
+package com.quickgerrit.app.data.api
+
+import com.quickgerrit.app.data.model.*
+import retrofit2.http.*
+
+interface GerritApi {
+
+    // Accounts
+    @GET("a/accounts/self")
+    suspend fun getSelf(): AccountInfo
+
+    // Changes
+    @GET("a/changes/")
+    suspend fun queryChanges(
+        @Query("q") query: String,
+        @Query("n") limit: Int = 50,
+        @Query("S") start: Int = 0,
+        @Query("o") options: List<String> = listOf(
+            "LABELS",
+            "DETAILED_LABELS",
+            "CURRENT_REVISION",
+            "CURRENT_COMMIT",
+            "DETAILED_ACCOUNTS",
+            "MESSAGES",
+            "REVIEWED",
+            "SUBMITTABLE",
+            "CHANGE_ACTIONS"
+        )
+    ): List<ChangeInfo>
+
+    @GET("a/changes/{changeId}/detail")
+    suspend fun getChangeDetail(
+        @Path("changeId", encoded = true) changeId: String,
+        @Query("o") options: List<String> = listOf(
+            "ALL_REVISIONS",
+            "ALL_COMMITS",
+            "ALL_FILES",
+            "DETAILED_LABELS",
+            "DETAILED_ACCOUNTS",
+            "MESSAGES",
+            "REVIEWER_UPDATES",
+            "SUBMITTABLE",
+            "CHANGE_ACTIONS",
+            "CURRENT_ACTIONS",
+            "COMMIT_FOOTERS"
+        )
+    ): ChangeInfo
+
+    @GET("a/changes/{changeId}/revisions/{revisionId}/files/")
+    suspend fun listFiles(
+        @Path("changeId", encoded = true) changeId: String,
+        @Path("revisionId") revisionId: String
+    ): Map<String, FileInfo>
+
+    @GET("a/changes/{changeId}/revisions/{revisionId}/files/{fileId}/diff")
+    suspend fun getDiff(
+        @Path("changeId", encoded = true) changeId: String,
+        @Path("revisionId") revisionId: String,
+        @Path("fileId", encoded = true) fileId: String,
+        @Query("context") context: String = "ALL",
+        @Query("intraline") intraline: Boolean = true
+    ): DiffInfo
+
+    @GET("a/changes/{changeId}/comments")
+    suspend fun listComments(
+        @Path("changeId", encoded = true) changeId: String
+    ): Map<String, List<CommentInfo>>
+
+    @GET("a/changes/{changeId}/drafts")
+    suspend fun listDrafts(
+        @Path("changeId", encoded = true) changeId: String
+    ): Map<String, List<CommentInfo>>
+
+    @POST("a/changes/{changeId}/revisions/{revisionId}/review")
+    suspend fun setReview(
+        @Path("changeId", encoded = true) changeId: String,
+        @Path("revisionId") revisionId: String,
+        @Body input: ReviewInput
+    ): Any
+
+    @POST("a/changes/{changeId}/abandon")
+    suspend fun abandon(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String> = emptyMap()
+    ): ChangeInfo
+
+    @POST("a/changes/{changeId}/restore")
+    suspend fun restore(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String> = emptyMap()
+    ): ChangeInfo
+
+    @POST("a/changes/{changeId}/submit")
+    suspend fun submit(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String> = emptyMap()
+    ): ChangeInfo
+
+    // Projects
+    @GET("a/projects/")
+    suspend fun listProjects(
+        @Query("d") description: Boolean = true,
+        @Query("t") tree: Boolean = false,
+        @Query("type") type: String = "ALL"
+    ): Map<String, ProjectInfo>
+}
