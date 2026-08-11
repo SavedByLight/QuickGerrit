@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.ChangeInfo
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,7 +38,10 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
         viewModelScope.launch {
             repo.activeAccount.collect { acc ->
                 _ui.update { it.copy(activeAccount = acc, hasAccounts = acc != null) }
-                if (acc != null) load()
+                if (acc != null) {
+                    AppLog.d("Active account changed → ${acc.name}; reloading changes")
+                    load()
+                }
             }
         }
         viewModelScope.launch {
@@ -48,6 +52,7 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
     }
 
     fun selectTab(tab: ChangeTab) {
+        AppLog.d("selectTab ${tab.label}")
         _ui.update { it.copy(tab = tab) }
         load()
     }
@@ -58,7 +63,10 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
 
     fun load() {
         viewModelScope.launch {
-            if (_ui.value.activeAccount == null) return@launch
+            if (_ui.value.activeAccount == null) {
+                AppLog.d("load skipped – no active account")
+                return@launch
+            }
             _ui.update { it.copy(isLoading = true, error = null) }
             try {
                 val list = repo.queryChanges(
@@ -67,6 +75,7 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
                 )
                 _ui.update { it.copy(changes = list, isLoading = false) }
             } catch (e: Exception) {
+                AppLog.e("Failed to load changes", e)
                 _ui.update {
                     it.copy(
                         isLoading = false,

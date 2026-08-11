@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.ProjectInfo
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +36,7 @@ class ProjectsViewModel(private val repo: GerritRepository) : ViewModel() {
                 val list = map.values.sortedBy { it.name.lowercase() }
                 _ui.update { it.copy(projects = list, isLoading = false) }
             } catch (e: Exception) {
+                AppLog.e("Failed to load projects", e)
                 _ui.update { it.copy(isLoading = false, error = e.message) }
             }
         }

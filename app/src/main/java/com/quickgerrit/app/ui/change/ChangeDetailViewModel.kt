@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.*
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +40,7 @@ class ChangeDetailViewModel(
 
     fun load() {
         viewModelScope.launch {
+            AppLog.d("ChangeDetail load $changeId")
             _ui.update { it.copy(isLoading = true, error = null) }
             try {
                 val detail = repo.getChangeDetail(changeId)
@@ -57,6 +59,7 @@ class ChangeDetailViewModel(
                     )
                 }
             } catch (e: Exception) {
+                AppLog.e("ChangeDetail load failed for $changeId", e)
                 _ui.update { it.copy(isLoading = false, error = e.message) }
             }
         }
@@ -64,11 +67,14 @@ class ChangeDetailViewModel(
 
     fun selectRevision(rev: String) {
         viewModelScope.launch {
+            AppLog.d("selectRevision $rev")
             _ui.update { it.copy(selectedRevision = rev) }
             try {
                 val files = repo.listFiles(changeId, rev)
                 _ui.update { it.copy(files = files) }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                AppLog.e("Failed to list files for rev $rev", e)
+            }
         }
     }
 
@@ -108,6 +114,7 @@ class ChangeDetailViewModel(
                 }
                 load()
             } catch (e: Exception) {
+                AppLog.e("submitReview failed", e)
                 _ui.update {
                     it.copy(actionInProgress = false, snackbar = e.message ?: "Review failed")
                 }
@@ -123,6 +130,7 @@ class ChangeDetailViewModel(
                 _ui.update { it.copy(actionInProgress = false, snackbar = "Abandoned") }
                 load()
             } catch (e: Exception) {
+                AppLog.e("abandon failed", e)
                 _ui.update { it.copy(actionInProgress = false, snackbar = e.message) }
             }
         }
@@ -136,6 +144,7 @@ class ChangeDetailViewModel(
                 _ui.update { it.copy(actionInProgress = false, snackbar = "Restored") }
                 load()
             } catch (e: Exception) {
+                AppLog.e("restore failed", e)
                 _ui.update { it.copy(actionInProgress = false, snackbar = e.message) }
             }
         }
@@ -149,6 +158,7 @@ class ChangeDetailViewModel(
                 _ui.update { it.copy(actionInProgress = false, snackbar = "Submitted") }
                 load()
             } catch (e: Exception) {
+                AppLog.e("submit failed", e)
                 _ui.update { it.copy(actionInProgress = false, snackbar = e.message) }
             }
         }

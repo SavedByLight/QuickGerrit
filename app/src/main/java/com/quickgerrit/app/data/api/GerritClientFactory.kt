@@ -1,13 +1,14 @@
 package com.quickgerrit.app.data.api
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import com.quickgerrit.app.BuildConfig
 import com.quickgerrit.app.data.model.GerritAccount
+import com.quickgerrit.app.util.AppLog
 import kotlinx.serialization.json.Json
 import okhttp3.Credentials
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -23,6 +24,7 @@ object GerritClientFactory {
 
     fun create(account: GerritAccount): GerritApi {
         val baseUrl = account.baseUrl.trimEnd('/') + "/"
+        AppLog.d("Creating Gerrit client for ${account.name.ifBlank { account.username }} @ $baseUrl")
 
         val authInterceptor = Interceptor { chain ->
             val request = chain.request().newBuilder()
@@ -45,8 +47,14 @@ object GerritClientFactory {
                 .build()
         }
 
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
+        val logging = HttpLoggingInterceptor { message ->
+            AppLog.d(message, tag = "QuickGerrit.Http")
+        }.apply {
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.BASIC
+            }
         }
 
         val client = OkHttpClient.Builder()

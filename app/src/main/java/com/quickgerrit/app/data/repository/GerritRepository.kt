@@ -4,6 +4,7 @@ import com.quickgerrit.app.data.api.GerritApi
 import com.quickgerrit.app.data.api.GerritClientFactory
 import com.quickgerrit.app.data.local.AccountStore
 import com.quickgerrit.app.data.model.*
+import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -25,60 +26,164 @@ class GerritRepository(
     }
 
     suspend fun testLogin(account: GerritAccount): AccountInfo {
-        val client = GerritClientFactory.create(account)
-        return client.getSelf()
+        AppLog.i("Testing login for ${account.username} @ ${account.baseUrl}")
+        return try {
+            val client = GerritClientFactory.create(account)
+            val self = client.getSelf()
+            AppLog.i("Login OK: ${self.displayName ?: self.name ?: self.username} (id=${self.accountId})")
+            self
+        } catch (e: Exception) {
+            AppLog.e("Login failed for ${account.username} @ ${account.baseUrl}", e)
+            throw e
+        }
     }
 
-    suspend fun addAccount(account: GerritAccount) = accountStore.addAccount(account)
-    suspend fun updateAccount(account: GerritAccount) = accountStore.updateAccount(account)
-    suspend fun removeAccount(id: String) = accountStore.removeAccount(id)
-    suspend fun setActive(id: String) = accountStore.setActiveAccount(id)
+    suspend fun addAccount(account: GerritAccount) = accountStore.addAccount(account).also {
+        AppLog.i("Account added: ${it.name} (${it.id})")
+    }
+
+    suspend fun updateAccount(account: GerritAccount) {
+        accountStore.updateAccount(account)
+        AppLog.i("Account updated: ${account.name} (${account.id})")
+    }
+
+    suspend fun removeAccount(id: String) {
+        accountStore.removeAccount(id)
+        AppLog.i("Account removed: $id")
+    }
+
+    suspend fun setActive(id: String) {
+        accountStore.setActiveAccount(id)
+        AppLog.i("Active account set to: $id")
+    }
 
     suspend fun queryChanges(status: String, queryExtra: String = "", limit: Int = 50, start: Int = 0): List<ChangeInfo> {
         val q = buildString {
             append("status:$status")
             if (queryExtra.isNotBlank()) append(" $queryExtra")
         }
-        return api().queryChanges(query = q, limit = limit, start = start)
+        AppLog.d("queryChanges q='$q' limit=$limit start=$start")
+        return try {
+            val result = api().queryChanges(query = q, limit = limit, start = start)
+            AppLog.d("queryChanges returned ${result.size} changes")
+            result
+        } catch (e: Exception) {
+            AppLog.e("queryChanges failed for q='$q'", e)
+            throw e
+        }
     }
 
     suspend fun getChangeDetail(changeId: String): ChangeInfo {
-        return api().getChangeDetail(changeId)
+        AppLog.d("getChangeDetail $changeId")
+        return try {
+            val detail = api().getChangeDetail(changeId)
+            AppLog.d("getChangeDetail OK: ${detail.subject} status=${detail.status}")
+            detail
+        } catch (e: Exception) {
+            AppLog.e("getChangeDetail failed for $changeId", e)
+            throw e
+        }
     }
 
     suspend fun listFiles(changeId: String, revisionId: String): Map<String, FileInfo> {
-        return api().listFiles(changeId, revisionId)
+        AppLog.d("listFiles change=$changeId rev=$revisionId")
+        return try {
+            val files = api().listFiles(changeId, revisionId)
+            AppLog.d("listFiles returned ${files.size} files")
+            files
+        } catch (e: Exception) {
+            AppLog.e("listFiles failed for $changeId/$revisionId", e)
+            throw e
+        }
     }
 
     suspend fun getDiff(changeId: String, revisionId: String, filePath: String): DiffInfo {
-        return api().getDiff(changeId, revisionId, filePath)
+        AppLog.d("getDiff $changeId/$revisionId path=$filePath")
+        return try {
+            api().getDiff(changeId, revisionId, filePath)
+        } catch (e: Exception) {
+            AppLog.e("getDiff failed for $filePath", e)
+            throw e
+        }
     }
 
     suspend fun listComments(changeId: String): Map<String, List<CommentInfo>> {
-        return api().listComments(changeId)
+        AppLog.d("listComments $changeId")
+        return try {
+            api().listComments(changeId)
+        } catch (e: Exception) {
+            AppLog.e("listComments failed for $changeId", e)
+            throw e
+        }
     }
 
     suspend fun listDrafts(changeId: String): Map<String, List<CommentInfo>> {
-        return api().listDrafts(changeId)
+        AppLog.d("listDrafts $changeId")
+        return try {
+            api().listDrafts(changeId)
+        } catch (e: Exception) {
+            AppLog.e("listDrafts failed for $changeId", e)
+            throw e
+        }
     }
 
     suspend fun setReview(changeId: String, revisionId: String, input: ReviewInput): Any {
-        return api().setReview(changeId, revisionId, input)
+        AppLog.i("setReview change=$changeId rev=$revisionId labels=${input.labels} message=${input.message?.take(40)}")
+        return try {
+            val result = api().setReview(changeId, revisionId, input)
+            AppLog.i("setReview succeeded")
+            result
+        } catch (e: Exception) {
+            AppLog.e("setReview failed", e)
+            throw e
+        }
     }
 
     suspend fun abandon(changeId: String, message: String = ""): ChangeInfo {
-        return api().abandon(changeId, if (message.isBlank()) emptyMap() else mapOf("message" to message))
+        AppLog.i("abandon $changeId")
+        return try {
+            api().abandon(changeId, if (message.isBlank()) emptyMap() else mapOf("message" to message)).also {
+                AppLog.i("abandon succeeded")
+            }
+        } catch (e: Exception) {
+            AppLog.e("abandon failed", e)
+            throw e
+        }
     }
 
     suspend fun restore(changeId: String, message: String = ""): ChangeInfo {
-        return api().restore(changeId, if (message.isBlank()) emptyMap() else mapOf("message" to message))
+        AppLog.i("restore $changeId")
+        return try {
+            api().restore(changeId, if (message.isBlank()) emptyMap() else mapOf("message" to message)).also {
+                AppLog.i("restore succeeded")
+            }
+        } catch (e: Exception) {
+            AppLog.e("restore failed", e)
+            throw e
+        }
     }
 
     suspend fun submit(changeId: String): ChangeInfo {
-        return api().submit(changeId)
+        AppLog.i("submit $changeId")
+        return try {
+            api().submit(changeId).also {
+                AppLog.i("submit succeeded")
+            }
+        } catch (e: Exception) {
+            AppLog.e("submit failed", e)
+            throw e
+        }
     }
 
     suspend fun listProjects(): Map<String, ProjectInfo> {
-        return api().listProjects()
+        AppLog.d("listProjects")
+        return try {
+            val map = api().listProjects()
+            AppLog.d("listProjects returned ${map.size} projects")
+            map
+        } catch (e: Exception) {
+            AppLog.e("listProjects failed", e)
+            throw e
+        }
     }
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +40,7 @@ class AccountsViewModel(private val repo: GerritRepository) : ViewModel() {
 
     fun addOrUpdate(account: GerritAccount, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
+            AppLog.i("addOrUpdate account=${account.username} @ ${account.baseUrl}")
             _ui.update { it.copy(isLoading = true, error = null, testing = true) }
             try {
                 val self = repo.testLogin(account)
@@ -55,6 +57,7 @@ class AccountsViewModel(private val repo: GerritRepository) : ViewModel() {
                 _ui.update { it.copy(isLoading = false, testing = false) }
                 onSuccess()
             } catch (e: Exception) {
+                AppLog.e("addOrUpdate failed", e)
                 _ui.update {
                     it.copy(
                         isLoading = false,
@@ -67,11 +70,17 @@ class AccountsViewModel(private val repo: GerritRepository) : ViewModel() {
     }
 
     fun setActive(id: String) {
-        viewModelScope.launch { repo.setActive(id) }
+        viewModelScope.launch {
+            AppLog.d("setActive $id")
+            repo.setActive(id)
+        }
     }
 
     fun remove(id: String) {
-        viewModelScope.launch { repo.removeAccount(id) }
+        viewModelScope.launch {
+            AppLog.i("remove account $id")
+            repo.removeAccount(id)
+        }
     }
 
     fun clearError() {
