@@ -61,7 +61,12 @@ class AccountStore(private val context: Context) {
             val updated = current.filter { it.id != id }
             prefs[accountsKey] = json.encodeToString(updated)
             if (prefs[activeIdKey] == id) {
-                prefs[activeIdKey] = updated.firstOrNull()?.id
+                val nextId = updated.firstOrNull()?.id
+                if (nextId != null) {
+                    prefs[activeIdKey] = nextId
+                } else {
+                    prefs.remove(activeIdKey)
+                }
             }
         }
     }
