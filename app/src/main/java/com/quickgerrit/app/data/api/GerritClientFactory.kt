@@ -12,7 +12,13 @@ import okhttp3.OkHttpClient
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 object GerritClientFactory {
 
@@ -21,6 +27,24 @@ object GerritClientFactory {
         isLenient = true
         coerceInputValues = true
     }
+
+    /**
+     * Debug-only trust manager that accepts any certificate chain.
+     * NEVER used in release builds.
+     */
+    private val trustAllManager = object : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+    }
+
+    private val trustAllSslSocketFactory by lazy {
+        SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf<TrustManager>(trustAllManager), SecureRandom())
+        }.socketFactory
+    }
+
+    private val trustAllHostnameVerifier = HostnameVerifier { _, _ -> true }
 
     fun create(account: GerritAccount): GerritApi {
         val baseUrl = account.baseUrl.trimEnd('/') + "/"
@@ -57,17 +81,23 @@ object GerritClientFactory {
             }
         }
 
-        val client = OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(xssiInterceptor)
             .addInterceptor(logging)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
-            .build()
+
+        if (BuildConfig.DEBUG) {
+            AppLog.w("DEBUG build: trusting all SSL certificates (insecure)")
+            builder
+                .sslSocketFactory(trustAllSslSocketFactory, trustAllManager)
+                .hostnameVerifier(trustAllHostnameVerifier)
+        }
 
         val retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(client)
+            .client(builder.build())
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
 
