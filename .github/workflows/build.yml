@@ -5,7 +5,7 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:          # manual trigger from GitHub UI
+  workflow_dispatch:
   release:
     types: [ published ]
 
@@ -26,14 +26,15 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-      # Generate wrapper if missing (your zip currently has none)
-      - name: Generate Gradle Wrapper (if needed)
+      - name: Generate Gradle Wrapper
         run: |
-          if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 8.9
-          fi
+          # Always regenerate so we control the Gradle version used by ./gradlew
+          gradle wrapper --gradle-version 8.9
           chmod +x gradlew
+          ./gradlew --version
 
       - name: Decode keystore (release only)
         if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
@@ -83,4 +84,3 @@ jobs:
       - name: Clean up keystore
         if: always()
         run: rm -f app/release.keystore
-        
