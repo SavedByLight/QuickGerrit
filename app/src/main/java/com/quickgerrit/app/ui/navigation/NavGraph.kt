@@ -1,8 +1,6 @@
 package com.quickgerrit.app.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -18,6 +16,7 @@ import com.quickgerrit.app.ui.change.ChangeDetailViewModel
 import com.quickgerrit.app.ui.change.DiffScreen
 import com.quickgerrit.app.ui.changes.ChangesScreen
 import com.quickgerrit.app.ui.changes.ChangesViewModel
+import com.quickgerrit.app.ui.logs.LogsScreen
 import com.quickgerrit.app.ui.projects.ProjectsScreen
 import com.quickgerrit.app.ui.projects.ProjectsViewModel
 
@@ -25,6 +24,7 @@ sealed class Screen(val route: String) {
     data object Changes : Screen("changes")
     data object Projects : Screen("projects")
     data object Accounts : Screen("accounts")
+    data object Logs : Screen("logs")
     data object ChangeDetail : Screen("change/{changeId}") {
         fun create(changeId: String) = "change/${java.net.URLEncoder.encode(changeId, "UTF-8")}"
     }
@@ -47,7 +47,8 @@ fun QuickGerritNavGraph() {
                 viewModel = vm,
                 onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) },
                 onOpenAccounts = { navController.navigate(Screen.Accounts.route) },
-                onOpenProjects = { navController.navigate(Screen.Projects.route) }
+                onOpenProjects = { navController.navigate(Screen.Projects.route) },
+                onOpenLogs = { navController.navigate(Screen.Logs.route) }
             )
         }
         composable(Screen.Projects.route) {
@@ -63,6 +64,9 @@ fun QuickGerritNavGraph() {
                 viewModel = vm,
                 onBack = { navController.popBackStack() }
             )
+        }
+        composable(Screen.Logs.route) {
+            LogsScreen(onBack = { navController.popBackStack() })
         }
         composable(
             route = Screen.ChangeDetail.route,

@@ -21,7 +21,8 @@ fun ChangesScreen(
     viewModel: ChangesViewModel,
     onOpenChange: (String) -> Unit,
     onOpenAccounts: () -> Unit,
-    onOpenProjects: () -> Unit
+    onOpenProjects: () -> Unit,
+    onOpenLogs: () -> Unit
 ) {
     val state by viewModel.ui.collectAsState()
 
@@ -46,6 +47,9 @@ fun ChangesScreen(
                     }
                     IconButton(onClick = onOpenAccounts) {
                         Icon(Icons.Default.ManageAccounts, "Accounts")
+                    }
+                    IconButton(onClick = onOpenLogs) {
+                        Icon(Icons.Default.BugReport, "Logs")
                     }
                     IconButton(onClick = { viewModel.load() }) {
                         Icon(Icons.Default.Refresh, "Refresh")
