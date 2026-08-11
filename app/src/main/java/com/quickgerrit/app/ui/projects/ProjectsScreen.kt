@@ -71,7 +71,7 @@ fun ProjectsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filtered, key = { it.id }) { project ->
-                        Card(Modifier = Modifier.fillMaxWidth()) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
                             Row(
                                 Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically

@@ -337,7 +337,7 @@ private fun MessagesSection(change: ChangeInfo) {
         Text("Messages", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         messages.takeLast(15).reversed().forEach { msg ->
-            Card(Modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Text(
                         "${msg.author?.name ?: "System"} · ${msg.date.take(19)}",
