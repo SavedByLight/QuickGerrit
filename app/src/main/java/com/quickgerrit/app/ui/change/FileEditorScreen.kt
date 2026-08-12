@@ -36,6 +36,8 @@ fun FileEditorScreen(
     changeId: String,
     revisionId: String,
     filePath: String,
+    project: String = "",
+    branch: String = "master",
     repository: GerritRepository,
     onBack: () -> Unit,
     onPublished: () -> Unit = {}
@@ -52,13 +54,22 @@ fun FileEditorScreen(
 
     val dirty = content != original
 
-    LaunchedEffect(changeId, revisionId, filePath) {
+    LaunchedEffect(changeId, revisionId, filePath, project, branch) {
         loading = true
         error = null
         try {
-            val text = repository.getFileContent(changeId, revisionId, filePath)
+            val text = repository.getFileContentForEdit(
+                changeId = changeId,
+                revisionId = revisionId,
+                filePath = filePath,
+                project = project,
+                branch = branch
+            )
             content = text
             original = text
+            if (text.isEmpty()) {
+                status = "New or empty file — type content and Save to add it to the change edit"
+            }
         } catch (e: Exception) {
             error = e.message ?: "Failed to load file"
         } finally {

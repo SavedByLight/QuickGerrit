@@ -33,9 +33,17 @@ sealed class Screen(val route: String) {
         fun create(changeId: String, revisionId: String, filePath: String) =
             "diff/${java.net.URLEncoder.encode(changeId, "UTF-8")}/$revisionId/${java.net.URLEncoder.encode(filePath, "UTF-8")}"
     }
-    data object FileEditor : Screen("edit/{changeId}/{revisionId}/{filePath}") {
-        fun create(changeId: String, revisionId: String, filePath: String) =
-            "edit/${java.net.URLEncoder.encode(changeId, "UTF-8")}/$revisionId/${java.net.URLEncoder.encode(filePath, "UTF-8")}"
+    data object FileEditor : Screen("edit/{changeId}/{revisionId}/{project}/{branch}/{filePath}") {
+        fun create(
+            changeId: String,
+            revisionId: String,
+            filePath: String,
+            project: String = "",
+            branch: String = "master"
+        ): String {
+            val enc = { s: String -> java.net.URLEncoder.encode(s, "UTF-8") }
+            return "edit/${enc(changeId)}/${enc(revisionId)}/${enc(project.ifBlank { "_" })}/${enc(branch.ifBlank { "master" })}/${enc(filePath)}"
+        }
     }
 }
 
@@ -86,8 +94,10 @@ fun QuickGerritNavGraph() {
                 onOpenDiff = { rev, path ->
                     navController.navigate(Screen.Diff.create(changeId, rev, path))
                 },
-                onOpenEditor = { rev, path ->
-                    navController.navigate(Screen.FileEditor.create(changeId, rev, path))
+                onOpenEditor = { rev, path, project, branch ->
+                    navController.navigate(
+                        Screen.FileEditor.create(changeId, rev, path, project, branch)
+                    )
                 }
             )
         }
@@ -109,6 +119,7 @@ fun QuickGerritNavGraph() {
                 repository = repo,
                 onBack = { navController.popBackStack() },
                 onEdit = {
+                    // project/branch unknown on diff route alone — placeholders; detail passes real ones
                     navController.navigate(Screen.FileEditor.create(changeId, revisionId, filePath))
                 }
             )
@@ -118,20 +129,26 @@ fun QuickGerritNavGraph() {
             arguments = listOf(
                 navArgument("changeId") { type = NavType.StringType },
                 navArgument("revisionId") { type = NavType.StringType },
+                navArgument("project") { type = NavType.StringType },
+                navArgument("branch") { type = NavType.StringType },
                 navArgument("filePath") { type = NavType.StringType }
             )
         ) { entry ->
-            val changeId = java.net.URLDecoder.decode(entry.arguments?.getString("changeId") ?: "", "UTF-8")
-            val revisionId = entry.arguments?.getString("revisionId") ?: "current"
-            val filePath = java.net.URLDecoder.decode(entry.arguments?.getString("filePath") ?: "", "UTF-8")
+            val dec = { s: String? -> java.net.URLDecoder.decode(s ?: "", "UTF-8") }
+            val changeId = dec(entry.arguments?.getString("changeId"))
+            val revisionId = dec(entry.arguments?.getString("revisionId")).ifBlank { "current" }
+            val project = dec(entry.arguments?.getString("project")).let { if (it == "_") "" else it }
+            val branch = dec(entry.arguments?.getString("branch")).ifBlank { "master" }
+            val filePath = dec(entry.arguments?.getString("filePath"))
             FileEditorScreen(
                 changeId = changeId,
                 revisionId = revisionId,
                 filePath = filePath,
+                project = project,
+                branch = branch,
                 repository = repo,
                 onBack = { navController.popBackStack() },
                 onPublished = {
-                    // Back to change detail and refresh by popping editor (+ maybe diff)
                     navController.popBackStack(Screen.ChangeDetail.create(changeId), inclusive = false)
                 }
             )

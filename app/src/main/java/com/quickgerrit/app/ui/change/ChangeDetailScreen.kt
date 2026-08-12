@@ -24,7 +24,7 @@ fun ChangeDetailScreen(
     viewModel: ChangeDetailViewModel,
     onBack: () -> Unit,
     onOpenDiff: (revisionId: String, filePath: String) -> Unit,
-    onOpenEditor: (revisionId: String, filePath: String) -> Unit = { _, _ -> }
+    onOpenEditor: (revisionId: String, filePath: String, project: String, branch: String) -> Unit = { _, _, _, _ -> }
 ) {
     val state by viewModel.ui.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -94,8 +94,38 @@ fun ChangeDetailScreen(
                             files = state.files,
                             revisionId = state.selectedRevision ?: "current",
                             onOpen = { path -> onOpenDiff(state.selectedRevision ?: "current", path) },
-                            onEdit = { path -> onOpenEditor(state.selectedRevision ?: "current", path) }
+                            onEdit = { path ->
+                                onOpenEditor(
+                                    state.selectedRevision ?: "current",
+                                    path,
+                                    change.project,
+                                    change.branch
+                                )
+                            }
                         )
+                    }
+                    if (change.status.equals("NEW", ignoreCase = true)) {
+                        item {
+                            EditOpenChangeSection(
+                                change = change,
+                                inProgress = state.actionInProgress,
+                                onSaveTopic = { viewModel.updateTopic(it) },
+                                onSaveMessage = { viewModel.updateCommitMessageAndPublish(it) },
+                                onPublishEdit = { viewModel.publishChangeEdit() },
+                                onDiscardEdit = { viewModel.discardChangeEdit() },
+                                onEditFile = { path ->
+                                    onOpenEditor(
+                                        state.selectedRevision ?: "current",
+                                        path,
+                                        change.project,
+                                        change.branch
+                                    )
+                                },
+                                filePaths = state.files.keys
+                                    .filter { it != "/COMMIT_MSG" && it != "/MERGE_LIST" }
+                                    .sorted()
+                            )
+                        }
                     }
                     item {
                         ReviewSection(
@@ -148,6 +178,180 @@ private fun HeaderSection(change: ChangeInfo) {
         }
         Text("Updated: ${change.updated.take(19).replace('T', ' ')}", style = MaterialTheme.typography.bodySmall)
         Text("+${change.insertions} −${change.deletions}", style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun EditOpenChangeSection(
+    change: ChangeInfo,
+    inProgress: Boolean,
+    onSaveTopic: (String) -> Unit,
+    onSaveMessage: (String) -> Unit,
+    onPublishEdit: () -> Unit,
+    onDiscardEdit: () -> Unit,
+    onEditFile: (String) -> Unit,
+    filePaths: List<String>
+) {
+    var topic by remember(change.topic) { mutableStateOf(change.topic.orEmpty()) }
+    val currentMessage = change.revisions
+        ?.get(change.currentRevision)
+        ?.commit
+        ?.message
+        ?: change.subject
+    var commitMsg by remember(change.currentRevision, currentMessage) {
+        mutableStateOf(currentMessage)
+    }
+    var showNewFile by remember { mutableStateOf(false) }
+    var newFilePath by remember { mutableStateOf("") }
+
+    Column {
+        Text("Edit this change", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Update topic, commit message, or files. File saves go into a change edit; publish to create a new patch set.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = topic,
+            onValueChange = { topic = it },
+            label = { Text("Topic") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !inProgress
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = { onSaveTopic(topic) },
+            enabled = !inProgress,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Save topic") }
+
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = commitMsg,
+            onValueChange = { commitMsg = it },
+            label = { Text("Commit message") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 4,
+            enabled = !inProgress
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = { onSaveMessage(commitMsg) },
+            enabled = !inProgress && commitMsg.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Save message & publish patch set") }
+
+        Spacer(Modifier.height(16.dp))
+        Text("Files", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Tap a file to open the in-app editor",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        filePaths.forEach { path ->
+            OutlinedButton(
+                onClick = { onEditFile(path) },
+                enabled = !inProgress,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(path, maxLines = 1)
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Any file in the repo (not only changed files)",
+            style = MaterialTheme.typography.titleSmall
+        )
+        Text(
+            "Type a path that exists on the branch, or a new path to create. Content is loaded from the branch tip when the file is not already in this change.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = newFilePath,
+            onValueChange = { newFilePath = it },
+            label = { Text("path/to/file in the repository") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !inProgress,
+            placeholder = { Text("e.g. src/main/AndroidManifest.xml") }
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = {
+                val p = newFilePath.trim().trimStart('/')
+                if (p.isNotEmpty()) onEditFile(p)
+            },
+            enabled = !inProgress && newFilePath.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Open file in editor") }
+        OutlinedButton(
+            onClick = { showNewFile = true },
+            enabled = !inProgress,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Quick path dialog…") }
+
+        Spacer(Modifier.height(12.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Button(
+                onClick = onPublishEdit,
+                enabled = !inProgress,
+                modifier = Modifier.weight(1f)
+            ) { Text("Publish edit") }
+            OutlinedButton(
+                onClick = onDiscardEdit,
+                enabled = !inProgress,
+                modifier = Modifier.weight(1f)
+            ) { Text("Discard edit") }
+        }
+    }
+
+    if (showNewFile) {
+        AlertDialog(
+            onDismissRequest = { showNewFile = false },
+            title = { Text("Edit file by path") },
+            text = {
+                Column {
+                    Text(
+                        "Enter a path relative to the repo root. For a new file, save content in the editor to create it in the change edit.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newFilePath,
+                        onValueChange = { newFilePath = it },
+                        label = { Text("path/to/file") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val p = newFilePath.trim().trimStart('/')
+                        if (p.isNotEmpty()) {
+                            showNewFile = false
+                            onEditFile(p)
+                            newFilePath = ""
+                        }
+                    },
+                    enabled = newFilePath.isNotBlank()
+                ) { Text("Open editor") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewFile = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 

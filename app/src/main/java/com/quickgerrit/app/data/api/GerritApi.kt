@@ -133,6 +133,17 @@ interface GerritApi {
     ): okhttp3.ResponseBody
 
     /**
+     * Content of any file at the tip of a branch (not limited to files already in a change).
+     * Base64 body.
+     */
+    @GET("a/projects/{project}/branches/{branch}/files/{fileId}/content")
+    suspend fun getBranchFileContent(
+        @Path("project", encoded = true) project: String,
+        @Path("branch", encoded = true) branch: String,
+        @Path("fileId", encoded = true) fileId: String
+    ): okhttp3.ResponseBody
+
+    /**
      * Put file content into the change edit (creates the edit if needed).
      * Body is raw file bytes / text; Content-Type text/plain.
      */

@@ -290,21 +290,66 @@ class GerritRepository(
      * Gerrit returns base64; we decode it. Binary files may produce garbage —
      * the editor is intended for text sources.
      */
+
+    /**
+     * Load file text for the editor.
+     * 1) Try the change revision (works for files already in the change).
+     * 2) Else try project branch tip (any file in the repo on that branch).
+     * 3) Else return empty string (new file to be created in the change edit).
+     */
+    suspend fun getFileContentForEdit(
+        changeId: String,
+        revisionId: String,
+        filePath: String,
+        project: String,
+        branch: String
+    ): String {
+        // Prefer content from the change revision when the file is part of the change
+        try {
+            return getFileContent(changeId, revisionId, filePath)
+        } catch (e: Exception) {
+            AppLog.d("getFileContent from change failed for $filePath: ${e.message}")
+        }
+        // Any other path: load from branch tip of the project
+        try {
+            return getBranchFileContent(project, branch, filePath)
+        } catch (e: Exception) {
+            AppLog.d("getBranchFileContent failed for $filePath: ${e.message}")
+        }
+        // New file
+        return ""
+    }
+
+    /** File content at branch HEAD (any path in the repo). */
+    suspend fun getBranchFileContent(project: String, branch: String, filePath: String): String {
+        val proj = encodeGerritFileId(project) // same encoding rules for path segments
+        val br = branch.removePrefix("refs/heads/").trim()
+        val encoded = encodeGerritFileId(filePath)
+        AppLog.d("getBranchFileContent project=$project branch=$br path=$filePath")
+        return try {
+            val body = api().getBranchFileContent(proj, br, encoded)
+            decodeBase64Content(body.string().trim())
+        } catch (e: Exception) {
+            AppLog.e("getBranchFileContent failed for $filePath", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
+    private fun decodeBase64Content(raw: String): String {
+        return try {
+            val bytes = android.util.Base64.decode(raw, android.util.Base64.DEFAULT)
+            String(bytes, Charsets.UTF_8)
+        } catch (_: Exception) {
+            raw
+        }
+    }
+
     suspend fun getFileContent(changeId: String, revisionId: String, filePath: String): String {
         val encoded = encodeGerritFileId(filePath)
         AppLog.d("getFileContent $changeId/$revisionId path=$filePath")
         return try {
             val body = api().getFileContent(changeId, revisionId, encoded)
-            val raw = body.string().trim()
-            // Gerrit typically returns base64 without the data: URI prefix
-            val decoded = try {
-                val bytes = android.util.Base64.decode(raw, android.util.Base64.DEFAULT)
-                String(bytes, Charsets.UTF_8)
-            } catch (_: Exception) {
-                // Fallback: treat as plain text
-                raw
-            }
-            decoded
+            decodeBase64Content(body.string().trim())
         } catch (e: Exception) {
             AppLog.e("getFileContent failed for $filePath", e)
             throw Exception(httpErrorDetail(e), e)
