@@ -44,7 +44,9 @@ data class ChangeInfo(
     val submittable: Boolean? = null,
     @SerialName("work_in_progress") val workInProgress: Boolean? = null,
     val starred: Boolean? = null,
-    val reviewed: Boolean? = null
+    val reviewed: Boolean? = null,
+    /** Present on the last result when more pages exist. */
+    @SerialName("_more_changes") val moreChanges: Boolean? = null
 )
 
 @Serializable

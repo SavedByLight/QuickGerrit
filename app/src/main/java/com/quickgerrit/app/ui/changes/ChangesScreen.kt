@@ -173,6 +173,46 @@ fun ChangesScreen(
                         items(state.changes, key = { it.id }) { change ->
                             ChangeCard(change = change, onClick = { onOpenChange(change.id) })
                         }
+                        item {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    "${state.changes.size} change(s) loaded",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                if (state.hasMore) {
+                                    Button(
+                                        onClick = { viewModel.loadMore() },
+                                        enabled = !state.isLoadingMore,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (state.isLoadingMore) {
+                                            CircularProgressIndicator(
+                                                Modifier.size(18.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text(
+                                            if (state.isLoadingMore) "Loading…"
+                                            else "Load more (next 100)"
+                                        )
+                                    }
+                                } else if (state.changes.isNotEmpty()) {
+                                    Text(
+                                        "End of results",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
