@@ -56,47 +56,35 @@ jobs:
             exit 1
           fi
 
-      - name: Build debug + release APKs
+      - name: Build debug APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          ./gradlew assembleDebug assembleRelease \
+          ./gradlew assembleDebug \
             -PversionCode=${{ steps.version.outputs.version_code }} \
             -PversionName=${{ steps.version.outputs.version_name }} \
             -PgithubRepo=${{ github.repository }} \
             --stacktrace
 
-      - name: Rename artifacts
+      - name: Package artifacts
         run: |
           mkdir -p dist
           DEBUG_APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
-          RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
 
           if [ -z "$DEBUG_APK" ]; then
             echo "ERROR: debug APK not found"
             find app/build/outputs -type f || true
             exit 1
           fi
-          if [ -z "$RELEASE_APK" ]; then
-            echo "ERROR: release APK not found"
-            find app/build/outputs -type f || true
-            exit 1
-          fi
 
           cp "$DEBUG_APK" "dist/QuickGerrit-${{ steps.version.outputs.version_name }}-debug.apk"
           cp "$DEBUG_APK" dist/QuickGerrit-debug.apk
-          cp "$RELEASE_APK" "dist/QuickGerrit-${{ steps.version.outputs.version_name }}-release.apk"
-          cp "$RELEASE_APK" dist/QuickGerrit-release.apk
 
-          echo "=== APK signing cert fingerprints (must match across releases) ==="
-          for apk in dist/*.apk; do
-            echo "--- $apk ---"
-            $ANDROID_HOME/build-tools/*/apksigner verify --print-certs "$apk" 2>/dev/null \
-              || unzip -p "$apk" META-INF/*.RSA 2>/dev/null | keytool -printcert 2>/dev/null \
-              || echo "(could not print cert)"
-          done
+          echo "=== APK signing cert ==="
+          $ANDROID_HOME/build-tools/*/apksigner verify --print-certs dist/QuickGerrit-debug.apk 2>/dev/null \
+            || echo "(could not print cert)"
 
           ls -la dist/
 
@@ -116,14 +104,9 @@ jobs:
           body: |
             ## QuickGerrit ${{ steps.version.outputs.version_name }}
 
-            Automated build from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
+            Automated **debug** build from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
 
-            **Install `QuickGerrit-release.apk` for updates.** Same package id + signing cert as previous CI builds, so Android will update in place (not install as a second app).
-
-            | File | Description |
-            |------|-------------|
-            | `QuickGerrit-release.apk` | Release build (use this) |
-            | `QuickGerrit-debug.apk` | Debug build (same package id & cert) |
+            Install **`QuickGerrit-debug.apk`**. Same package id + signing cert across releases so Android updates in place.
           files: dist/*
           draft: false
           prerelease: false
