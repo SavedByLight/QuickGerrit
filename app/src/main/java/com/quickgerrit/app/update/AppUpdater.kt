@@ -95,8 +95,8 @@ object AppUpdater {
 
             val preferred = BuildConfig.UPDATE_APK_NAME
             val asset = release.assets.firstOrNull { it.name == preferred }
-                ?: release.assets.firstOrNull { it.name.endsWith("-release.apk") }
-                ?: release.assets.firstOrNull { it.name.endsWith(".apk") && !it.name.contains("debug") }
+                ?: release.assets.firstOrNull { it.name.endsWith("-debug.apk") }
+                ?: release.assets.firstOrNull { it.name == "QuickGerrit-debug.apk" }
                 ?: release.assets.firstOrNull { it.name.endsWith(".apk") }
 
             if (asset == null) {

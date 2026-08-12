@@ -28,6 +28,7 @@ fun ChangesScreen(
 ) {
     val state by viewModel.ui.collectAsState()
     var pendingUpdate by remember { mutableStateOf<AppUpdater.UpdateInfo?>(null) }
+    var showCreate by remember { mutableStateOf(false) }
 
     // Silent check once per session against GitHub Releases
     AutoUpdateChecker { info ->
@@ -35,6 +36,13 @@ fun ChangesScreen(
     }
 
     Scaffold(
+        floatingActionButton = {
+            if (state.hasAccounts) {
+                FloatingActionButton(onClick = { showCreate = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Create change")
+                }
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -170,7 +178,103 @@ fun ChangesScreen(
             }
         }
     }
+
+    if (showCreate) {
+        CreateChangeDialog(
+            creating = state.creating,
+            error = state.createError,
+            onDismiss = {
+                showCreate = false
+                viewModel.clearCreateResult()
+            },
+            onCreate = { project, branch, subject, topic, wip ->
+                viewModel.createChange(project, branch, subject, topic, wip) { id ->
+                    showCreate = false
+                    viewModel.clearCreateResult()
+                    onOpenChange(id)
+                }
+            }
+        )
+    }
 }
+
+@Composable
+private fun CreateChangeDialog(
+    creating: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onCreate: (project: String, branch: String, subject: String, topic: String, wip: Boolean) -> Unit
+) {
+    var project by remember { mutableStateOf("") }
+    var branch by remember { mutableStateOf("master") }
+    var subject by remember { mutableStateOf("") }
+    var topic by remember { mutableStateOf("") }
+    var wip by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = { if (!creating) onDismiss() },
+        title = { Text("Create change") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = project,
+                    onValueChange = { project = it },
+                    label = { Text("Project") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating
+                )
+                OutlinedTextField(
+                    value = branch,
+                    onValueChange = { branch = it },
+                    label = { Text("Branch") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating
+                )
+                OutlinedTextField(
+                    value = subject,
+                    onValueChange = { subject = it },
+                    label = { Text("Subject") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating,
+                    minLines = 2
+                )
+                OutlinedTextField(
+                    value = topic,
+                    onValueChange = { topic = it },
+                    label = { Text("Topic (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = wip, onCheckedChange = { wip = it }, enabled = !creating)
+                    Text("Work in progress")
+                }
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCreate(project, branch, subject, topic, wip) },
+                enabled = !creating && project.isNotBlank() && subject.isNotBlank()
+            ) {
+                if (creating) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Create")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !creating) { Text("Cancel") }
+        }
+    )
+}
+
 
 @Composable
 private fun EmptyAccountsPrompt(onOpenAccounts: () -> Unit) {

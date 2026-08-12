@@ -22,7 +22,7 @@ android {
         val repo = (project.findProperty("githubRepo") as String?)
             ?: (System.getenv("GITHUB_REPOSITORY") ?: "")
         buildConfigField("String", "GITHUB_REPO", "\"$repo\"")
-        buildConfigField("String", "UPDATE_APK_NAME", "\"QuickGerrit-release.apk\"")
+        buildConfigField("String", "UPDATE_APK_NAME", "\"QuickGerrit-debug.apk\"")
     }
 
     signingConfigs {

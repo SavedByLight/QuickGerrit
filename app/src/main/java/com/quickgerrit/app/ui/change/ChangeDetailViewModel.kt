@@ -164,6 +164,34 @@ class ChangeDetailViewModel(
         }
     }
 
+    fun setWip(message: String = "") {
+        viewModelScope.launch {
+            _ui.update { it.copy(actionInProgress = true) }
+            try {
+                repo.setWorkInProgress(changeId, message)
+                _ui.update { it.copy(actionInProgress = false, snackbar = "Marked as Work in Progress") }
+                load()
+            } catch (e: Exception) {
+                AppLog.e("setWip failed", e)
+                _ui.update { it.copy(actionInProgress = false, snackbar = e.message) }
+            }
+        }
+    }
+
+    fun setReady(message: String = "") {
+        viewModelScope.launch {
+            _ui.update { it.copy(actionInProgress = true) }
+            try {
+                repo.setReadyForReview(changeId, message)
+                _ui.update { it.copy(actionInProgress = false, snackbar = "Marked as Ready for Review") }
+                load()
+            } catch (e: Exception) {
+                AppLog.e("setReady failed", e)
+                _ui.update { it.copy(actionInProgress = false, snackbar = e.message) }
+            }
+        }
+    }
+
     fun clearSnackbar() {
         _ui.update { it.copy(snackbar = null) }
     }

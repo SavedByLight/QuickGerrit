@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.ChangeInfo
+import com.quickgerrit.app.data.model.ChangeInput
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.data.repository.GerritRepository
 import com.quickgerrit.app.util.AppLog
@@ -26,7 +27,10 @@ data class ChangesUiState(
     val error: String? = null,
     val search: String = "",
     val activeAccount: GerritAccount? = null,
-    val hasAccounts: Boolean = false
+    val hasAccounts: Boolean = false,
+    val creating: Boolean = false,
+    val createError: String? = null,
+    val createdChangeId: String? = null
 )
 
 class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
@@ -81,6 +85,48 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
                         isLoading = false,
                         error = e.message ?: "Failed to load changes"
                     )
+                }
+            }
+        }
+    }
+
+
+    fun clearCreateResult() {
+        _ui.update { it.copy(createError = null, createdChangeId = null) }
+    }
+
+    fun createChange(
+        project: String,
+        branch: String,
+        subject: String,
+        topic: String = "",
+        workInProgress: Boolean = false,
+        onSuccess: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _ui.update { it.copy(creating = true, createError = null, createdChangeId = null) }
+            try {
+                val created = repo.createChange(
+                    ChangeInput(
+                        project = project.trim(),
+                        branch = branch.trim().ifBlank { "master" },
+                        subject = subject.trim(),
+                        topic = topic.trim().ifBlank { null },
+                        workInProgress = workInProgress
+                    )
+                )
+                _ui.update {
+                    it.copy(
+                        creating = false,
+                        createdChangeId = created.id
+                    )
+                }
+                load()
+                onSuccess(created.id)
+            } catch (e: Exception) {
+                AppLog.e("createChange failed", e)
+                _ui.update {
+                    it.copy(creating = false, createError = e.message ?: "Create failed")
                 }
             }
         }

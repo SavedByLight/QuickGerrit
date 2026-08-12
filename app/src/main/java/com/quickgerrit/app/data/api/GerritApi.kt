@@ -46,6 +46,10 @@ interface GerritApi {
         )
     ): ChangeInfo
 
+    /** Create an empty change (subject + project + branch). */
+    @POST("a/changes/")
+    suspend fun createChange(@Body input: ChangeInput): ChangeInfo
+
     @GET("a/changes/{changeId}/revisions/{revisionId}/files/")
     suspend fun listFiles(
         @Path("changeId", encoded = true) changeId: String,
@@ -95,6 +99,20 @@ interface GerritApi {
         @Path("changeId", encoded = true) changeId: String,
         @Body body: Map<String, String> = emptyMap()
     ): ChangeInfo
+
+    /** Mark change as Work-In-Progress. */
+    @POST("a/changes/{changeId}/wip")
+    suspend fun setWorkInProgress(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String> = emptyMap()
+    ): Any
+
+    /** Mark change as Ready for Review (active). */
+    @POST("a/changes/{changeId}/ready")
+    suspend fun setReadyForReview(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String> = emptyMap()
+    ): Any
 
     // Projects
     @GET("a/projects/")

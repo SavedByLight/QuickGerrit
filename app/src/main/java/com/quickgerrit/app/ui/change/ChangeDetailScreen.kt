@@ -113,7 +113,9 @@ fun ChangeDetailScreen(
                             inProgress = state.actionInProgress,
                             onAbandon = { viewModel.abandon() },
                             onRestore = { viewModel.restore() },
-                            onSubmit = { viewModel.submit() }
+                            onSubmit = { viewModel.submit() },
+                            onWip = { viewModel.setWip() },
+                            onReady = { viewModel.setReady() }
                         )
                     }
                     item {
@@ -303,14 +305,28 @@ private fun ActionsSection(
     inProgress: Boolean,
     onAbandon: () -> Unit,
     onRestore: () -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    onWip: () -> Unit,
+    onReady: () -> Unit
 ) {
     Column {
         Text("Actions", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             when (change.status.uppercase()) {
                 "NEW" -> {
+                    if (change.workInProgress == true) {
+                        Button(onClick = onReady, enabled = !inProgress) {
+                            Text("Mark Active")
+                        }
+                    } else {
+                        OutlinedButton(onClick = onWip, enabled = !inProgress) {
+                            Text("Mark WIP")
+                        }
+                    }
                     OutlinedButton(onClick = onAbandon, enabled = !inProgress) {
                         Text("Abandon")
                     }

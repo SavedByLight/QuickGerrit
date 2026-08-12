@@ -192,6 +192,18 @@ data class DiffContent(
     @SerialName("skip") val skip: Int? = null
 )
 
+/** Body for POST /a/changes/ — creates an empty change. */
+@Serializable
+data class ChangeInput(
+    val project: String,
+    val branch: String,
+    val subject: String,
+    val topic: String? = null,
+    val status: String? = "NEW",
+    @SerialName("is_private") val isPrivate: Boolean? = null,
+    @SerialName("work_in_progress") val workInProgress: Boolean? = null
+)
+
 @Serializable
 data class ReviewInput(
     val message: String? = null,

@@ -190,6 +190,44 @@ class GerritRepository(
         }
     }
 
+    suspend fun createChange(input: ChangeInput): ChangeInfo {
+        AppLog.i("createChange project=${input.project} branch=${input.branch} subject=${input.subject}")
+        return try {
+            api().createChange(input).also {
+                AppLog.i("createChange OK id=${it.id} number=${it.number}")
+            }
+        } catch (e: Exception) {
+            AppLog.e("createChange failed", e)
+            throw e
+        }
+    }
+
+    suspend fun setWorkInProgress(changeId: String, message: String = ""): Any {
+        AppLog.i("setWorkInProgress $changeId")
+        return try {
+            api().setWorkInProgress(
+                changeId,
+                if (message.isBlank()) emptyMap() else mapOf("message" to message)
+            ).also { AppLog.i("setWorkInProgress succeeded") }
+        } catch (e: Exception) {
+            AppLog.e("setWorkInProgress failed", e)
+            throw e
+        }
+    }
+
+    suspend fun setReadyForReview(changeId: String, message: String = ""): Any {
+        AppLog.i("setReadyForReview $changeId")
+        return try {
+            api().setReadyForReview(
+                changeId,
+                if (message.isBlank()) emptyMap() else mapOf("message" to message)
+            ).also { AppLog.i("setReadyForReview succeeded") }
+        } catch (e: Exception) {
+            AppLog.e("setReadyForReview failed", e)
+            throw e
+        }
+    }
+
     suspend fun listProjects(): Map<String, ProjectInfo> {
         AppLog.d("listProjects")
         return try {
