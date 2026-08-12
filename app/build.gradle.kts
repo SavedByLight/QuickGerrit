@@ -26,14 +26,25 @@ android {
     }
 
     signingConfigs {
+        // Preferred: secrets-provided keystore written to app/release.keystore by CI
         create("release") {
-            // These come from environment variables (set by the GitHub Actions workflow)
-            val keystoreFile = file("release.keystore")
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+            val releaseKs = file("release.keystore")
+            val ciKs = file("ci.keystore")
+            when {
+                releaseKs.exists() -> {
+                    storeFile = releaseKs
+                    storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+                    keyAlias = System.getenv("KEY_ALIAS") ?: ""
+                    keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+                }
+                // Stable in-repo keystore so every CI build shares the same cert
+                // → installs update the existing app instead of appearing as a new one
+                ciKs.exists() -> {
+                    storeFile = ciKs
+                    storePassword = "quickgerrit"
+                    keyAlias = "quickgerrit"
+                    keyPassword = "quickgerrit"
+                }
             }
         }
     }
@@ -41,8 +52,12 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
+            // Keep the SAME applicationId as release so updates replace the same app.
+            // (Do NOT use applicationIdSuffix — that makes debug a different package.)
             versionNameSuffix = "-debug"
+            // Sign debug with the same cert as release when possible so GH debug/release
+            // APKs can update each other.
+            signingConfig = signingConfigs.getByName("release")
         }
         release {
             isMinifyEnabled = false
@@ -50,11 +65,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Only apply signing when a keystore is present; otherwise unsigned release is fine for GH Releases
-            val keystoreFile = file("release.keystore")
-            if (keystoreFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
