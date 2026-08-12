@@ -171,16 +171,16 @@ data class CommentRange(
 
 @Serializable
 data class DiffInfo(
-    val metaA: DiffFileMetaInfo? = null,
-    val metaB: DiffFileMetaInfo? = null,
-    val changeType: String? = null,
+    @SerialName("meta_a") val metaA: DiffFileMetaInfo? = null,
+    @SerialName("meta_b") val metaB: DiffFileMetaInfo? = null,
+    @SerialName("change_type") val changeType: String? = null,
     val content: List<DiffContent>? = null
 )
 
 @Serializable
 data class DiffFileMetaInfo(
     val name: String = "",
-    val contentType: String? = null,
+    @SerialName("content_type") val contentType: String? = null,
     val lines: Int = 0
 )
 

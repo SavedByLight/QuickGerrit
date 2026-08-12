@@ -98,12 +98,27 @@ class GerritRepository(
     }
 
     suspend fun getDiff(changeId: String, revisionId: String, filePath: String): DiffInfo {
-        AppLog.d("getDiff $changeId/$revisionId path=$filePath")
+        // Gerrit requires each path segment to be percent-encoded and '/' → %2F
+        // (see REST API {file-id}). @Path(encoded=true) means we must encode here.
+        val encodedFileId = encodeGerritFileId(filePath)
+        AppLog.d("getDiff $changeId/$revisionId path=$filePath encoded=$encodedFileId")
         return try {
-            api().getDiff(changeId, revisionId, filePath)
+            api().getDiff(changeId, revisionId, encodedFileId)
         } catch (e: Exception) {
             AppLog.e("getDiff failed for $filePath", e)
             throw e
+        }
+    }
+
+    /**
+     * Encode a file path for use as Gerrit {file-id} in the URL.
+     * Each path component is URL-encoded; '/' is turned into %2F.
+     */
+    private fun encodeGerritFileId(path: String): String {
+        if (path.isEmpty()) return path
+        return path.split('/').joinToString("%2F") { segment ->
+            java.net.URLEncoder.encode(segment, Charsets.UTF_8.name())
+                .replace("+", "%20")
         }
     }
 
