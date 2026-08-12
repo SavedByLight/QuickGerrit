@@ -55,7 +55,8 @@ fun QuickGerritNavGraph() {
             val vm: ProjectsViewModel = viewModel(factory = ProjectsViewModel.Factory(repo))
             ProjectsScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) }
             )
         }
         composable(Screen.Accounts.route) {

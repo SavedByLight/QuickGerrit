@@ -3,6 +3,7 @@ package com.quickgerrit.app.ui.projects
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.quickgerrit.app.data.model.ChangeInput
 import com.quickgerrit.app.data.model.ProjectInfo
 import com.quickgerrit.app.data.repository.GerritRepository
 import com.quickgerrit.app.util.AppLog
@@ -16,7 +17,9 @@ data class ProjectsUiState(
     val projects: List<ProjectInfo> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val filter: String = ""
+    val filter: String = "",
+    val creating: Boolean = false,
+    val createError: String? = null
 )
 
 class ProjectsViewModel(private val repo: GerritRepository) : ViewModel() {
@@ -51,6 +54,41 @@ class ProjectsViewModel(private val repo: GerritRepository) : ViewModel() {
 
     fun setFilter(q: String) {
         _ui.update { it.copy(filter = q) }
+    }
+
+    fun clearCreateResult() {
+        _ui.update { it.copy(createError = null) }
+    }
+
+    fun createChange(
+        project: String,
+        branch: String,
+        subject: String,
+        topic: String = "",
+        workInProgress: Boolean = true,
+        onSuccess: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _ui.update { it.copy(creating = true, createError = null) }
+            try {
+                val created = repo.createChange(
+                    ChangeInput(
+                        project = project.trim(),
+                        branch = branch.trim().ifBlank { "master" },
+                        subject = subject.trim(),
+                        topic = topic.trim().ifBlank { null },
+                        workInProgress = workInProgress
+                    )
+                )
+                _ui.update { it.copy(creating = false) }
+                onSuccess(created.id)
+            } catch (e: Exception) {
+                AppLog.e("createChange from projects failed", e)
+                _ui.update {
+                    it.copy(creating = false, createError = e.message ?: "Create failed")
+                }
+            }
+        }
     }
 
     class Factory(private val repo: GerritRepository) : ViewModelProvider.Factory {
