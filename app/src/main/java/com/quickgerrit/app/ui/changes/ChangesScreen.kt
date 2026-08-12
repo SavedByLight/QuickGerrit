@@ -14,6 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quickgerrit.app.data.model.ChangeInfo
+import com.quickgerrit.app.update.AppUpdater
+import com.quickgerrit.app.ui.update.AutoUpdateChecker
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,6 +27,12 @@ fun ChangesScreen(
     onOpenLogs: () -> Unit
 ) {
     val state by viewModel.ui.collectAsState()
+    var pendingUpdate by remember { mutableStateOf<AppUpdater.UpdateInfo?>(null) }
+
+    // Silent check once per session against GitHub Releases
+    AutoUpdateChecker { info ->
+        pendingUpdate = info
+    }
 
     Scaffold(
         topBar = {
@@ -59,6 +67,44 @@ fun ChangesScreen(
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            // Banner when a newer release is available
+            pendingUpdate?.let { info ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .clickable {
+                            // Navigate user to Accounts → Check for updates for full flow
+                            onOpenAccounts()
+                        }
+                ) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.SystemUpdate, null)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Update available: v${info.versionName}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Tap to open Accounts and install",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        IconButton(onClick = { pendingUpdate = null }) {
+                            Icon(Icons.Default.Close, "Dismiss")
+                        }
+                    }
+                }
+            }
+
             if (!state.hasAccounts) {
                 EmptyAccountsPrompt(onOpenAccounts)
                 return@Column

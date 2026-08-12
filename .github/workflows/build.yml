@@ -1,4 +1,4 @@
-name: Build Android App
+name: Build & Release
 
 on:
   push:
@@ -6,8 +6,9 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-  release:
-    types: [ published ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -33,50 +34,89 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Decode keystore (release only)
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+      - name: Compute version
+        id: version
+        run: |
+          # versionCode = run number (monotonic), versionName = 1.0.<run>
+          CODE="${{ github.run_number }}"
+          NAME="1.0.${CODE}"
+          echo "version_code=${CODE}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NAME}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${NAME} (code ${CODE})"
+
+      - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
-            echo "Keystore decoded"
+            echo "Keystore decoded — release builds will be signed"
           else
-            echo "No keystore secret – release signing will be skipped"
+            echo "No KEYSTORE_BASE64 secret — release APK will be unsigned"
           fi
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Build signed release (APK + AAB)
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+      - name: Build debug + release APKs
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -f app/release.keystore ]; then
-            ./gradlew assembleRelease bundleRelease --stacktrace
-          else
-            echo "Skipping signed release (no keystore)"
-          fi
+          ./gradlew assembleDebug assembleRelease \
+            -PversionCode=${{ steps.version.outputs.version_code }} \
+            -PversionName=${{ steps.version.outputs.version_name }} \
+            -PgithubRepo=${{ github.repository }} \
+            --stacktrace
 
-      - name: Upload debug APK
+      - name: Rename artifacts
+        run: |
+          mkdir -p dist
+          DEBUG_APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          cp "$DEBUG_APK" "dist/QuickGerrit-${{ steps.version.outputs.version_name }}-debug.apk"
+          if [ -n "$RELEASE_APK" ]; then
+            cp "$RELEASE_APK" "dist/QuickGerrit-${{ steps.version.outputs.version_name }}-release.apk"
+          fi
+          # Also keep stable names for "latest" consumers / auto-updater
+          cp "$DEBUG_APK" dist/QuickGerrit-debug.apk
+          if [ -n "$RELEASE_APK" ]; then
+            cp "$RELEASE_APK" dist/QuickGerrit-release.apk
+          fi
+          ls -la dist/
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: QuickGerrit-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: QuickGerrit-${{ steps.version.outputs.version_name }}
+          path: dist/*
           if-no-files-found: error
 
-      - name: Upload release artifacts
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
         with:
-          name: QuickGerrit-release
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: ignore
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: QuickGerrit ${{ steps.version.outputs.version_name }}
+          body: |
+            ## QuickGerrit ${{ steps.version.outputs.version_name }}
+
+            Automated build from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
+
+            ### Assets
+            | File | Description |
+            |------|-------------|
+            | `QuickGerrit-release.apk` | Release build (preferred for daily use) |
+            | `QuickGerrit-debug.apk` | Debug build (logging enabled) |
+            | `QuickGerrit-*-release.apk` | Versioned release APK |
+            | `QuickGerrit-*-debug.apk` | Versioned debug APK |
+
+            The in-app updater checks this release feed automatically.
+          files: dist/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Clean up keystore
         if: always()

@@ -14,7 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.quickgerrit.app.BuildConfig
 import com.quickgerrit.app.data.model.GerritAccount
+import com.quickgerrit.app.ui.update.UpdateCheckButton
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,7 +65,7 @@ fun AccountsScreen(
             }
 
             if (state.accounts.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.PersonAdd, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(16.dp))
@@ -77,6 +79,7 @@ fun AccountsScreen(
                 }
             } else {
                 LazyColumn(
+                    modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -90,6 +93,18 @@ fun AccountsScreen(
                         )
                     }
                 }
+            }
+
+            // App version + update check (GitHub Releases)
+            HorizontalDivider()
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    "App v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                UpdateCheckButton()
             }
         }
     }

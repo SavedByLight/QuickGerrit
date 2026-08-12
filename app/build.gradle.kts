@@ -13,9 +13,16 @@ android {
         applicationId = "com.quickgerrit.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // Overridable from CI: -PversionCode=N -PversionName=x.y.z
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("versionName") as String?) ?: "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // GitHub repo used by the in-app updater (owner/name). CI passes -PgithubRepo=...
+        val repo = (project.findProperty("githubRepo") as String?)
+            ?: (System.getenv("GITHUB_REPOSITORY") ?: "")
+        buildConfigField("String", "GITHUB_REPO", "\"$repo\"")
+        buildConfigField("String", "UPDATE_APK_NAME", "\"QuickGerrit-release.apk\"")
     }
 
     signingConfigs {
@@ -32,13 +39,22 @@ android {
     }
 
     buildTypes {
+        debug {
+            isMinifyEnabled = false
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            // Only apply signing when a keystore is present; otherwise unsigned release is fine for GH Releases
+            val keystoreFile = file("release.keystore")
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
