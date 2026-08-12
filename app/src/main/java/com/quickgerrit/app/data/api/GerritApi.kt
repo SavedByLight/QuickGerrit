@@ -121,4 +121,52 @@ interface GerritApi {
         @Query("t") tree: Boolean = false,
         @Query("type") type: String = "ALL"
     ): Map<String, ProjectInfo>
+
+    // —— File content & change edit (in-app editor) ——
+
+    /** File content is base64-encoded plain text (or binary). */
+    @GET("a/changes/{changeId}/revisions/{revisionId}/files/{fileId}/content")
+    suspend fun getFileContent(
+        @Path("changeId", encoded = true) changeId: String,
+        @Path("revisionId") revisionId: String,
+        @Path("fileId", encoded = true) fileId: String
+    ): okhttp3.ResponseBody
+
+    /**
+     * Put file content into the change edit (creates the edit if needed).
+     * Body is raw file bytes / text; Content-Type text/plain.
+     */
+    @PUT("a/changes/{changeId}/edit/{fileId}")
+    suspend fun putEditFile(
+        @Path("changeId", encoded = true) changeId: String,
+        @Path("fileId", encoded = true) fileId: String,
+        @Body body: okhttp3.RequestBody
+    ): okhttp3.ResponseBody?
+
+    /** Publish change edit as a new patch set. */
+    @POST("a/changes/{changeId}/edit:publish")
+    suspend fun publishEdit(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String> = emptyMap()
+    ): okhttp3.ResponseBody?
+
+    /** Delete the current change edit. */
+    @DELETE("a/changes/{changeId}/edit")
+    suspend fun deleteEdit(
+        @Path("changeId", encoded = true) changeId: String
+    ): okhttp3.ResponseBody?
+
+    /** Set change topic. */
+    @PUT("a/changes/{changeId}/topic")
+    suspend fun setTopic(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String>
+    ): String
+
+    /** Modify commit message inside the change edit. */
+    @PUT("a/changes/{changeId}/edit:message")
+    suspend fun putEditMessage(
+        @Path("changeId", encoded = true) changeId: String,
+        @Body body: Map<String, String>
+    ): okhttp3.ResponseBody?
 }

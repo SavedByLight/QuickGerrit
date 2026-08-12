@@ -23,7 +23,8 @@ import com.quickgerrit.app.ui.changes.StatusChip
 fun ChangeDetailScreen(
     viewModel: ChangeDetailViewModel,
     onBack: () -> Unit,
-    onOpenDiff: (revisionId: String, filePath: String) -> Unit
+    onOpenDiff: (revisionId: String, filePath: String) -> Unit,
+    onOpenEditor: (revisionId: String, filePath: String) -> Unit = { _, _ -> }
 ) {
     val state by viewModel.ui.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -92,7 +93,8 @@ fun ChangeDetailScreen(
                         FilesSection(
                             files = state.files,
                             revisionId = state.selectedRevision ?: "current",
-                            onOpen = { path -> onOpenDiff(state.selectedRevision ?: "current", path) }
+                            onOpen = { path -> onOpenDiff(state.selectedRevision ?: "current", path) },
+                            onEdit = { path -> onOpenEditor(state.selectedRevision ?: "current", path) }
                         )
                     }
                     item {
@@ -203,7 +205,8 @@ private fun RevisionsSection(
 private fun FilesSection(
     files: Map<String, FileInfo>,
     revisionId: String,
-    onOpen: (String) -> Unit
+    onOpen: (String) -> Unit,
+    onEdit: (String) -> Unit = {}
 ) {
     Column {
         Text("Files (${files.size})", style = MaterialTheme.typography.titleMedium)
@@ -216,10 +219,11 @@ private fun FilesSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp)
-                        .clickable { onOpen(path) }
                 ) {
                     Row(
-                        Modifier.padding(12.dp),
+                        Modifier
+                            .clickable { onOpen(path) }
+                            .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val status = when (info.status) {
@@ -236,6 +240,11 @@ private fun FilesSection(
                                 "+${info.linesInserted ?: 0} −${info.linesDeleted ?: 0}",
                                 style = MaterialTheme.typography.labelSmall
                             )
+                        }
+                        if (info.status != "D") {
+                            TextButton(onClick = { onEdit(path) }) {
+                                Text("Edit")
+                            }
                         }
                         Icon(Icons.Default.ChevronRight, null)
                     }

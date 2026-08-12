@@ -8,6 +8,8 @@ import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class GerritRepository(
     private val accountStore: AccountStore
@@ -282,4 +284,93 @@ class GerritRepository(
             throw e
         }
     }
+
+    /**
+     * Fetch file content as UTF-8 text.
+     * Gerrit returns base64; we decode it. Binary files may produce garbage —
+     * the editor is intended for text sources.
+     */
+    suspend fun getFileContent(changeId: String, revisionId: String, filePath: String): String {
+        val encoded = encodeGerritFileId(filePath)
+        AppLog.d("getFileContent $changeId/$revisionId path=$filePath")
+        return try {
+            val body = api().getFileContent(changeId, revisionId, encoded)
+            val raw = body.string().trim()
+            // Gerrit typically returns base64 without the data: URI prefix
+            val decoded = try {
+                val bytes = android.util.Base64.decode(raw, android.util.Base64.DEFAULT)
+                String(bytes, Charsets.UTF_8)
+            } catch (_: Exception) {
+                // Fallback: treat as plain text
+                raw
+            }
+            decoded
+        } catch (e: Exception) {
+            AppLog.e("getFileContent failed for $filePath", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
+    /** Write file content into the change edit (creates edit if needed). */
+    suspend fun putEditFile(changeId: String, filePath: String, content: String) {
+        val encoded = encodeGerritFileId(filePath)
+        AppLog.i("putEditFile $changeId path=$filePath (${content.length} chars)")
+        try {
+            val mediaType = "text/plain; charset=UTF-8".toMediaType()
+            val body = content.toRequestBody(mediaType)
+            api().putEditFile(changeId, encoded, body)
+            AppLog.i("putEditFile OK")
+        } catch (e: Exception) {
+            AppLog.e("putEditFile failed", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
+    /** Publish the change edit as a new patch set. */
+    suspend fun publishEdit(changeId: String) {
+        AppLog.i("publishEdit $changeId")
+        try {
+            api().publishEdit(changeId)
+            AppLog.i("publishEdit OK")
+        } catch (e: Exception) {
+            AppLog.e("publishEdit failed", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
+    suspend fun deleteEdit(changeId: String) {
+        AppLog.i("deleteEdit $changeId")
+        try {
+            api().deleteEdit(changeId)
+            AppLog.i("deleteEdit OK")
+        } catch (e: Exception) {
+            AppLog.e("deleteEdit failed", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
+    suspend fun setTopic(changeId: String, topic: String) {
+        AppLog.i("setTopic $changeId → $topic")
+        try {
+            api().setTopic(changeId, mapOf("topic" to topic))
+            AppLog.i("setTopic OK")
+        } catch (e: Exception) {
+            AppLog.e("setTopic failed", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
+    /** Update commit message via change edit (must publishEdit afterwards). */
+    suspend fun putEditMessage(changeId: String, message: String) {
+        AppLog.i("putEditMessage $changeId")
+        try {
+            api().putEditMessage(changeId, mapOf("message" to message))
+            AppLog.i("putEditMessage OK")
+        } catch (e: Exception) {
+            AppLog.e("putEditMessage failed", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
 }
+
+// (okhttp extensions used above: toMediaType / toRequestBody)

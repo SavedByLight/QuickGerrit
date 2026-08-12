@@ -27,7 +27,8 @@ fun DiffScreen(
     revisionId: String,
     filePath: String,
     repository: GerritRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onEdit: () -> Unit = {}
 ) {
     var diff by remember { mutableStateOf<DiffInfo?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -62,6 +63,9 @@ fun DiffScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = onEdit) {
+                        Text("Edit")
+                    }
                     TextButton(onClick = { unified = !unified }) {
                         Text(if (unified) "Side-by-side" else "Unified")
                     }

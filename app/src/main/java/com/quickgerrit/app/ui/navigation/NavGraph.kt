@@ -14,6 +14,7 @@ import com.quickgerrit.app.ui.accounts.AccountsViewModel
 import com.quickgerrit.app.ui.change.ChangeDetailScreen
 import com.quickgerrit.app.ui.change.ChangeDetailViewModel
 import com.quickgerrit.app.ui.change.DiffScreen
+import com.quickgerrit.app.ui.change.FileEditorScreen
 import com.quickgerrit.app.ui.changes.ChangesScreen
 import com.quickgerrit.app.ui.changes.ChangesViewModel
 import com.quickgerrit.app.ui.logs.LogsScreen
@@ -31,6 +32,10 @@ sealed class Screen(val route: String) {
     data object Diff : Screen("diff/{changeId}/{revisionId}/{filePath}") {
         fun create(changeId: String, revisionId: String, filePath: String) =
             "diff/${java.net.URLEncoder.encode(changeId, "UTF-8")}/$revisionId/${java.net.URLEncoder.encode(filePath, "UTF-8")}"
+    }
+    data object FileEditor : Screen("edit/{changeId}/{revisionId}/{filePath}") {
+        fun create(changeId: String, revisionId: String, filePath: String) =
+            "edit/${java.net.URLEncoder.encode(changeId, "UTF-8")}/$revisionId/${java.net.URLEncoder.encode(filePath, "UTF-8")}"
     }
 }
 
@@ -80,6 +85,9 @@ fun QuickGerritNavGraph() {
                 onBack = { navController.popBackStack() },
                 onOpenDiff = { rev, path ->
                     navController.navigate(Screen.Diff.create(changeId, rev, path))
+                },
+                onOpenEditor = { rev, path ->
+                    navController.navigate(Screen.FileEditor.create(changeId, rev, path))
                 }
             )
         }
@@ -99,7 +107,33 @@ fun QuickGerritNavGraph() {
                 revisionId = revisionId,
                 filePath = filePath,
                 repository = repo,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onEdit = {
+                    navController.navigate(Screen.FileEditor.create(changeId, revisionId, filePath))
+                }
+            )
+        }
+        composable(
+            route = Screen.FileEditor.route,
+            arguments = listOf(
+                navArgument("changeId") { type = NavType.StringType },
+                navArgument("revisionId") { type = NavType.StringType },
+                navArgument("filePath") { type = NavType.StringType }
+            )
+        ) { entry ->
+            val changeId = java.net.URLDecoder.decode(entry.arguments?.getString("changeId") ?: "", "UTF-8")
+            val revisionId = entry.arguments?.getString("revisionId") ?: "current"
+            val filePath = java.net.URLDecoder.decode(entry.arguments?.getString("filePath") ?: "", "UTF-8")
+            FileEditorScreen(
+                changeId = changeId,
+                revisionId = revisionId,
+                filePath = filePath,
+                repository = repo,
+                onBack = { navController.popBackStack() },
+                onPublished = {
+                    // Back to change detail and refresh by popping editor (+ maybe diff)
+                    navController.popBackStack(Screen.ChangeDetail.create(changeId), inclusive = false)
+                }
             )
         }
     }
