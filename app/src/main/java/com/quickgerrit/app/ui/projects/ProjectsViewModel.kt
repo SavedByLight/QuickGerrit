@@ -33,7 +33,14 @@ class ProjectsViewModel(private val repo: GerritRepository) : ViewModel() {
             _ui.update { it.copy(isLoading = true, error = null) }
             try {
                 val map = repo.listProjects()
-                val list = map.values.sortedBy { it.name.lowercase() }
+                // Gerrit omits the "name" field when projects are returned as a map
+                // (the project name is the map key). Populate name/id from the key.
+                val list = map.map { (key, info) ->
+                    info.copy(
+                        id = info.id.ifBlank { key },
+                        name = info.name.ifBlank { key }
+                    )
+                }.sortedBy { it.name.lowercase() }
                 _ui.update { it.copy(projects = list, isLoading = false) }
             } catch (e: Exception) {
                 AppLog.e("Failed to load projects", e)
