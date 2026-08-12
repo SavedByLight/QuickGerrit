@@ -196,6 +196,83 @@ class ChangeDetailViewModel(
         _ui.update { it.copy(snackbar = null) }
     }
 
+    /** Update topic on the open change (immediate). */
+    fun updateTopic(topic: String) {
+        viewModelScope.launch {
+            _ui.update { it.copy(actionInProgress = true) }
+            try {
+                repo.setTopic(changeId, topic.trim())
+                _ui.update { it.copy(actionInProgress = false, snackbar = "Topic updated") }
+                load()
+            } catch (e: Exception) {
+                AppLog.e("updateTopic failed", e)
+                _ui.update { it.copy(actionInProgress = false, snackbar = e.message ?: "Topic update failed") }
+            }
+        }
+    }
+
+    /**
+     * Write commit message into the change edit, then publish as a new patch set.
+     * This is how you change the subject / body of an open change.
+     */
+    fun updateCommitMessageAndPublish(message: String) {
+        val msg = message.trim()
+        if (msg.isEmpty()) {
+            _ui.update { it.copy(snackbar = "Commit message cannot be empty") }
+            return
+        }
+        viewModelScope.launch {
+            _ui.update { it.copy(actionInProgress = true) }
+            try {
+                repo.putEditMessage(changeId, msg)
+                repo.publishEdit(changeId)
+                _ui.update {
+                    it.copy(actionInProgress = false, snackbar = "Commit message published as new patch set")
+                }
+                load()
+            } catch (e: Exception) {
+                AppLog.e("updateCommitMessageAndPublish failed", e)
+                _ui.update {
+                    it.copy(actionInProgress = false, snackbar = e.message ?: "Failed to update message")
+                }
+            }
+        }
+    }
+
+    /** Publish any pending change edit (e.g. after file edits) as a new patch set. */
+    fun publishChangeEdit() {
+        viewModelScope.launch {
+            _ui.update { it.copy(actionInProgress = true) }
+            try {
+                repo.publishEdit(changeId)
+                _ui.update { it.copy(actionInProgress = false, snackbar = "Change edit published") }
+                load()
+            } catch (e: Exception) {
+                AppLog.e("publishChangeEdit failed", e)
+                _ui.update {
+                    it.copy(actionInProgress = false, snackbar = e.message ?: "Publish edit failed")
+                }
+            }
+        }
+    }
+
+    /** Discard the current change edit without publishing. */
+    fun discardChangeEdit() {
+        viewModelScope.launch {
+            _ui.update { it.copy(actionInProgress = true) }
+            try {
+                repo.deleteEdit(changeId)
+                _ui.update { it.copy(actionInProgress = false, snackbar = "Change edit discarded") }
+                load()
+            } catch (e: Exception) {
+                AppLog.e("discardChangeEdit failed", e)
+                _ui.update {
+                    it.copy(actionInProgress = false, snackbar = e.message ?: "Discard failed")
+                }
+            }
+        }
+    }
+
     class Factory(
         private val repo: GerritRepository,
         private val changeId: String
