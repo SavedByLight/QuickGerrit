@@ -199,7 +199,8 @@ data class ChangeInput(
     val branch: String,
     val subject: String,
     val topic: String? = null,
-    val status: String? = "NEW",
+    // Only NEW is supported for create; omit when null so older servers stay happy
+    val status: String? = null,
     @SerialName("is_private") val isPrivate: Boolean? = null,
     @SerialName("work_in_progress") val workInProgress: Boolean? = null
 )

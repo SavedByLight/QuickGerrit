@@ -26,6 +26,8 @@ object GerritClientFactory {
         ignoreUnknownKeys = true
         isLenient = true
         coerceInputValues = true
+        encodeDefaults = false   // omit nulls / defaults — Gerrit rejects unknown/null quirks
+        explicitNulls = false
     }
 
     /**

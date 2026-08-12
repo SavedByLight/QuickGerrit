@@ -191,15 +191,58 @@ class GerritRepository(
     }
 
     suspend fun createChange(input: ChangeInput): ChangeInfo {
-        AppLog.i("createChange project=${input.project} branch=${input.branch} subject=${input.subject}")
+        // Normalize branch: Gerrit wants the short name (no refs/heads/)
+        val branch = input.branch
+            .removePrefix("refs/heads/")
+            .removePrefix("refs/")
+            .trim()
+            .ifBlank { "master" }
+        val normalized = input.copy(
+            project = input.project.trim(),
+            branch = branch,
+            subject = input.subject.trim(),
+            topic = input.topic?.trim()?.ifBlank { null },
+            status = input.status ?: "NEW"
+        )
+        AppLog.i(
+            "createChange project=${normalized.project} branch=${normalized.branch} " +
+                "subject=${normalized.subject} wip=${normalized.workInProgress}"
+        )
         return try {
-            api().createChange(input).also {
+            api().createChange(normalized).also {
                 AppLog.i("createChange OK id=${it.id} number=${it.number}")
             }
         } catch (e: Exception) {
-            AppLog.e("createChange failed", e)
-            throw e
+            val detail = httpErrorDetail(e)
+            AppLog.e("createChange failed: $detail", e)
+            throw Exception(detail, e)
         }
+    }
+
+    /** Prefer Gerrit response body text over generic "HTTP 400 Bad Request". */
+    private fun httpErrorDetail(e: Throwable): String {
+        if (e is retrofit2.HttpException) {
+            val body = try {
+                e.response()?.errorBody()?.string()?.trim().orEmpty()
+            } catch (_: Exception) {
+                ""
+            }
+            // Gerrit often returns plain text, sometimes JSON {"message":"..."}
+            val fromBody = when {
+                body.isBlank() -> null
+                body.startsWith("{") -> {
+                    Regex("\"message\"\\s*:\\s*\"([^\"]+)\"")
+                        .find(body)?.groupValues?.getOrNull(1)
+                        ?: body.take(300)
+                }
+                else -> body.take(300)
+            }
+            if (!fromBody.isNullOrBlank()) {
+                return "HTTP ${e.code()}: $fromBody"
+            }
+            return "HTTP ${e.code()} ${e.message()}"
+        }
+        return e.message ?: e.toString()
     }
 
     suspend fun setWorkInProgress(changeId: String, message: String = ""): Any {
