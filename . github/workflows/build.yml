@@ -2,9 +2,7 @@ name: Build & Release
 
 on:
   push:
-    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
@@ -37,7 +35,6 @@ jobs:
       - name: Compute version
         id: version
         run: |
-          # versionCode = run number (monotonic), versionName = 1.0.<run>
           CODE="${{ github.run_number }}"
           NAME="1.0.${CODE}"
           echo "version_code=${CODE}" >> "$GITHUB_OUTPUT"
@@ -73,15 +70,23 @@ jobs:
           mkdir -p dist
           DEBUG_APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+
+          if [ -z "$DEBUG_APK" ]; then
+            echo "ERROR: debug APK not found"
+            find app/build/outputs -type f || true
+            exit 1
+          fi
+
           cp "$DEBUG_APK" "dist/QuickGerrit-${{ steps.version.outputs.version_name }}-debug.apk"
+          cp "$DEBUG_APK" dist/QuickGerrit-debug.apk
+
           if [ -n "$RELEASE_APK" ]; then
             cp "$RELEASE_APK" "dist/QuickGerrit-${{ steps.version.outputs.version_name }}-release.apk"
-          fi
-          # Also keep stable names for "latest" consumers / auto-updater
-          cp "$DEBUG_APK" dist/QuickGerrit-debug.apk
-          if [ -n "$RELEASE_APK" ]; then
             cp "$RELEASE_APK" dist/QuickGerrit-release.apk
+          else
+            echo "WARNING: release APK not found"
           fi
+
           ls -la dist/
 
       - name: Upload build artifacts
@@ -92,6 +97,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub Release
+        # Only on push / manual run (not PRs); requires contents:write
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
@@ -121,3 +127,4 @@ jobs:
       - name: Clean up keystore
         if: always()
         run: rm -f app/release.keystore
+  
