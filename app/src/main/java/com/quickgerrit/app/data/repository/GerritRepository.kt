@@ -99,6 +99,25 @@ class GerritRepository(
         }
     }
 
+
+    /**
+     * Search file paths in the full tree of a revision (not only changed files).
+     * Uses Gerrit files/?q= which matches path substrings.
+     */
+    suspend fun searchRevisionFiles(changeId: String, revisionId: String, query: String): List<String> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        AppLog.d("searchRevisionFiles change=$changeId rev=$revisionId q='$q'")
+        return try {
+            api().searchRevisionFiles(changeId, revisionId, q)
+                .filter { it != "/COMMIT_MSG" && it != "/MERGE_LIST" }
+                .sorted()
+        } catch (e: Exception) {
+            AppLog.e("searchRevisionFiles failed", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
     suspend fun getDiff(changeId: String, revisionId: String, filePath: String): DiffInfo {
         // Gerrit requires each path segment to be percent-encoded and '/' → %2F
         // (see REST API {file-id}). @Path(encoded=true) means we must encode here.

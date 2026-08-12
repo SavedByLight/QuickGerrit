@@ -123,7 +123,13 @@ fun ChangeDetailScreen(
                                 },
                                 filePaths = state.files.keys
                                     .filter { it != "/COMMIT_MSG" && it != "/MERGE_LIST" }
-                                    .sorted()
+                                    .sorted(),
+                                repoQuery = state.repoFileQuery,
+                                repoMatches = state.repoFileMatches,
+                                repoSearching = state.repoFileSearching,
+                                repoSearchError = state.repoFileSearchError,
+                                onRepoQueryChange = { viewModel.setRepoFileQuery(it) },
+                                onSearchRepo = { viewModel.searchRepoFiles(it) }
                             )
                         }
                     }
@@ -190,7 +196,13 @@ private fun EditOpenChangeSection(
     onPublishEdit: () -> Unit,
     onDiscardEdit: () -> Unit,
     onEditFile: (String) -> Unit,
-    filePaths: List<String>
+    filePaths: List<String>,
+    repoQuery: String = "",
+    repoMatches: List<String> = emptyList(),
+    repoSearching: Boolean = false,
+    repoSearchError: String? = null,
+    onRepoQueryChange: (String) -> Unit = {},
+    onSearchRepo: (String) -> Unit = {}
 ) {
     var topic by remember(change.topic) { mutableStateOf(change.topic.orEmpty()) }
     val currentMessage = change.revisions
@@ -262,40 +274,111 @@ private fun EditOpenChangeSection(
             }
             Spacer(Modifier.height(4.dp))
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
-            "Any file in the repo (not only changed files)",
+            "Browse files in the repository",
             style = MaterialTheme.typography.titleSmall
         )
         Text(
-            "Type a path that exists on the branch, or a new path to create. Content is loaded from the branch tip when the file is not already in this change.",
+            "Search by path (Gerrit returns matching files from the full tree, not only files already in this change). Tap a result to open the editor.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
-            value = newFilePath,
-            onValueChange = { newFilePath = it },
-            label = { Text("path/to/file in the repository") },
+            value = repoQuery,
+            onValueChange = { onRepoQueryChange(it) },
+            label = { Text("Search path…") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             enabled = !inProgress,
-            placeholder = { Text("e.g. src/main/AndroidManifest.xml") }
+            placeholder = { Text("e.g. README, .kt, src/") },
+            trailingIcon = {
+                IconButton(
+                    onClick = { onSearchRepo(repoQuery) },
+                    enabled = !inProgress && repoQuery.isNotBlank()
+                ) {
+                    if (repoSearching) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Search, "Search")
+                    }
+                }
+            }
         )
         Spacer(Modifier.height(8.dp))
         Button(
+            onClick = { onSearchRepo(repoQuery) },
+            enabled = !inProgress && repoQuery.isNotBlank() && !repoSearching,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Search repository files") }
+
+        repoSearchError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        if (repoMatches.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "${repoMatches.size} match(es) — tap to edit",
+                style = MaterialTheme.typography.labelMedium
+            )
+            Spacer(Modifier.height(4.dp))
+            // Selectable results box
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 280.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                ) {
+                    repoMatches.forEach { path ->
+                        Text(
+                            path,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !inProgress) { onEditFile(path) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        } else if (repoQuery.isNotBlank() && !repoSearching && repoSearchError == null) {
+            Text(
+                "No matches. Try a shorter substring (e.g. “kt” or “README”).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = newFilePath,
+            onValueChange = { newFilePath = it },
+            label = { Text("Or open exact path / new file") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !inProgress,
+            placeholder = { Text("path/to/file") }
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
             onClick = {
                 val p = newFilePath.trim().trimStart('/')
                 if (p.isNotEmpty()) onEditFile(p)
             },
             enabled = !inProgress && newFilePath.isNotBlank(),
             modifier = Modifier.fillMaxWidth()
-        ) { Text("Open file in editor") }
-        OutlinedButton(
-            onClick = { showNewFile = true },
-            enabled = !inProgress,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Quick path dialog…") }
+        ) { Text("Open path in editor") }
 
         Spacer(Modifier.height(12.dp))
         Row(

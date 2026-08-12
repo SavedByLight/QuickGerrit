@@ -56,6 +56,17 @@ interface GerritApi {
         @Path("revisionId") revisionId: String
     ): Map<String, FileInfo>
 
+    /**
+     * Search all files in the revision tree (modified or not) by path substring.
+     * Gerrit returns a JSON array of paths (typically capped ~20 matches).
+     */
+    @GET("a/changes/{changeId}/revisions/{revisionId}/files/")
+    suspend fun searchRevisionFiles(
+        @Path("changeId", encoded = true) changeId: String,
+        @Path("revisionId") revisionId: String,
+        @Query("q") query: String
+    ): List<String>
+
     @GET("a/changes/{changeId}/revisions/{revisionId}/files/{fileId}/diff")
     suspend fun getDiff(
         @Path("changeId", encoded = true) changeId: String,

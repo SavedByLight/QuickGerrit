@@ -23,7 +23,11 @@ data class ChangeDetailUiState(
     val codeReviewScore: Int = 0,
     val verifiedScore: Int = 0,
     val actionInProgress: Boolean = false,
-    val snackbar: String? = null
+    val snackbar: String? = null,
+    val repoFileQuery: String = "",
+    val repoFileMatches: List<String> = emptyList(),
+    val repoFileSearching: Boolean = false,
+    val repoFileSearchError: String? = null
 )
 
 class ChangeDetailViewModel(
@@ -194,6 +198,40 @@ class ChangeDetailViewModel(
 
     fun clearSnackbar() {
         _ui.update { it.copy(snackbar = null) }
+    }
+
+    fun setRepoFileQuery(q: String) {
+        _ui.update { it.copy(repoFileQuery = q) }
+    }
+
+    /** Search full revision tree by path substring (Gerrit files/?q=). */
+    fun searchRepoFiles(query: String = _ui.value.repoFileQuery) {
+        val rev = _ui.value.selectedRevision ?: return
+        val q = query.trim()
+        if (q.isEmpty()) {
+            _ui.update {
+                it.copy(repoFileMatches = emptyList(), repoFileSearching = false, repoFileSearchError = null)
+            }
+            return
+        }
+        viewModelScope.launch {
+            _ui.update { it.copy(repoFileSearching = true, repoFileSearchError = null, repoFileQuery = q) }
+            try {
+                val matches = repo.searchRevisionFiles(changeId, rev, q)
+                _ui.update {
+                    it.copy(repoFileMatches = matches, repoFileSearching = false)
+                }
+            } catch (e: Exception) {
+                AppLog.e("searchRepoFiles failed", e)
+                _ui.update {
+                    it.copy(
+                        repoFileSearching = false,
+                        repoFileSearchError = e.message ?: "Search failed",
+                        repoFileMatches = emptyList()
+                    )
+                }
+            }
+        }
     }
 
     /** Update topic on the open change (immediate). */
