@@ -16,9 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.ui.theme.rememberCodeColors
 import kotlinx.coroutines.launch
 
 /**
@@ -53,6 +55,7 @@ fun FileEditorScreen(
     val snackbar = remember { SnackbarHostState() }
 
     val dirty = content != original
+    val codeColors = rememberCodeColors()
 
     LaunchedEffect(changeId, revisionId, filePath, project, branch) {
         loading = true
@@ -133,11 +136,30 @@ fun FileEditorScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(
-                            filePath.substringAfterLast('/'),
-                            maxLines = 1,
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                filePath.substringAfterLast('/'),
+                                maxLines = 1,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            val ext = filePath.substringAfterLast('.').uppercase()
+                            if (ext.isNotBlank() && ext.length <= 8 && ext != filePath.uppercase()) {
+                                val accent = codeColors.languageColor(filePath)
+                                Surface(
+                                    shape = MaterialTheme.shapes.extraSmall,
+                                    color = accent.copy(alpha = 0.18f)
+                                ) {
+                                    Text(
+                                        ext,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = accent,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
                         Text(
                             filePath,
                             maxLines = 1,

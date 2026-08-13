@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quickgerrit.app.data.model.ChangeInfo
 import com.quickgerrit.app.update.AppUpdater
+import com.quickgerrit.app.ui.theme.rememberCodeColors
 import com.quickgerrit.app.ui.update.AutoUpdateChecker
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -339,6 +340,7 @@ private fun EmptyAccountsPrompt(onOpenAccounts: () -> Unit) {
 
 @Composable
 private fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
+    val codeColors = rememberCodeColors()
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(1.dp)
@@ -355,7 +357,7 @@ private fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
                 StatusChip(change.status)
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "+${change.insertions} −${change.deletions}",
+                    codeColors.insertionsDeletionsText(change.insertions, change.deletions),
                     style = MaterialTheme.typography.labelSmall
                 )
             }

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.quickgerrit.app.data.model.ChangeInfo
 import com.quickgerrit.app.data.model.FileInfo
 import com.quickgerrit.app.ui.changes.StatusChip
+import com.quickgerrit.app.ui.theme.rememberCodeColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,6 +168,7 @@ fun ChangeDetailScreen(
 
 @Composable
 private fun HeaderSection(change: ChangeInfo) {
+    val codeColors = rememberCodeColors()
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusChip(change.status)
@@ -183,7 +185,10 @@ private fun HeaderSection(change: ChangeInfo) {
             Text("Owner: ${it.displayName ?: it.name}", style = MaterialTheme.typography.bodySmall)
         }
         Text("Updated: ${change.updated.take(19).replace('T', ' ')}", style = MaterialTheme.typography.bodySmall)
-        Text("+${change.insertions} −${change.deletions}", style = MaterialTheme.typography.labelMedium)
+        Text(
+            codeColors.insertionsDeletionsText(change.insertions, change.deletions),
+            style = MaterialTheme.typography.labelMedium
+        )
     }
 }
 
@@ -495,6 +500,7 @@ private fun FilesSection(
     onOpen: (String) -> Unit,
     onEdit: (String) -> Unit = {}
 ) {
+    val codeColors = rememberCodeColors()
     Column {
         Text("Files (${files.size})", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
@@ -519,12 +525,28 @@ private fun FilesSection(
                             "R" -> "R"
                             else -> "M"
                         }
-                        Text(status, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            status,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = codeColors.statusColor(status)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        // Language accent from file extension
+                        val lang = codeColors.languageColor(path)
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = lang.copy(alpha = 0.16f),
+                            modifier = Modifier.size(width = 4.dp, height = 28.dp)
+                        ) {}
+                        Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
                             Text(path, style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "+${info.linesInserted ?: 0} −${info.linesDeleted ?: 0}",
+                                codeColors.insertionsDeletionsText(
+                                    info.linesInserted ?: 0,
+                                    info.linesDeleted ?: 0
+                                ),
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
