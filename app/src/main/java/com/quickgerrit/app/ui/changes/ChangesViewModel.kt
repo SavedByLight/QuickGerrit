@@ -64,8 +64,20 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
     }
 
     fun selectTab(tab: ChangeTab) {
+        if (_ui.value.tab == tab) return
         AppLog.d("selectTab ${tab.label}")
-        _ui.update { it.copy(tab = tab) }
+        // Clear previous results so the loading indicator appears immediately
+        // and stale data from another status is not shown while the new query runs.
+        _ui.update {
+            it.copy(
+                tab = tab,
+                changes = emptyList(),
+                isLoading = true,
+                error = null,
+                nextStart = 0,
+                hasMore = false
+            )
+        }
         load()
     }
 
