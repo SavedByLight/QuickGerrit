@@ -38,6 +38,7 @@ interface GerritApi {
             "DETAILED_LABELS",
             "DETAILED_ACCOUNTS",
             "MESSAGES",
+            "REVIEWERS",
             "REVIEWER_UPDATES",
             "SUBMITTABLE",
             "CHANGE_ACTIONS",

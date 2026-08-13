@@ -68,10 +68,15 @@ data class ApprovalInfo(
     @SerialName("_account_id") val accountId: Int = 0,
     val name: String? = null,
     val email: String? = null,
+    val username: String? = null,
+    @SerialName("display_name") val displayName: String? = null,
     val value: Int? = null,
     val date: String? = null,
     val tag: String? = null
-)
+) {
+    val display: String
+        get() = displayName ?: name ?: username ?: email ?: "Account $accountId"
+}
 
 @Serializable
 data class RevisionInfo(

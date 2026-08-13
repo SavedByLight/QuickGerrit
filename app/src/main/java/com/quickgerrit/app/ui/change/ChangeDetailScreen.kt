@@ -14,10 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.quickgerrit.app.data.model.AccountInfo
+import com.quickgerrit.app.data.model.ApprovalInfo
 import com.quickgerrit.app.data.model.ChangeInfo
+import com.quickgerrit.app.data.model.CommentInfo
 import com.quickgerrit.app.data.model.FileInfo
 import com.quickgerrit.app.ui.changes.StatusChip
 import com.quickgerrit.app.ui.theme.rememberCodeColors
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,6 +87,9 @@ fun ChangeDetailScreen(
                     }
                     item {
                         LabelsSection(change)
+                    }
+                    item {
+                        ReviewersSection(change)
                     }
                     item {
                         RevisionsSection(
@@ -156,6 +164,9 @@ fun ChangeDetailScreen(
                             onWip = { viewModel.setWip() },
                             onReady = { viewModel.setReady() }
                         )
+                    }
+                    item {
+                        CommentsSection(state.comments)
                     }
                     item {
                         MessagesSection(change)
@@ -446,12 +457,250 @@ private fun EditOpenChangeSection(
 @Composable
 private fun LabelsSection(change: ChangeInfo) {
     val labels = change.labels ?: return
+    if (labels.isEmpty()) return
     Column {
-        Text("Labels", style = MaterialTheme.typography.titleMedium)
+        Text("Reviews / Labels", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         labels.forEach { (name, info) ->
-            val values = info.all?.mapNotNull { it.value }?.distinct()?.sorted() ?: emptyList()
-            Text("$name: ${values.joinToString()}", style = MaterialTheme.typography.bodyMedium)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(name, fontWeight = FontWeight.SemiBold)
+                        // Summary from approved / rejected shortcuts when present
+                        info.approved?.let {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("+ ${(it.displayName ?: it.name) ?: "approved"}") },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = Color(0xFF2E7D32).copy(alpha = 0.18f),
+                                    labelColor = Color(0xFF2E7D32)
+                                )
+                            )
+                        }
+                        info.rejected?.let {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("− ${(it.displayName ?: it.name) ?: "rejected"}") },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = Color(0xFFC62828).copy(alpha = 0.18f),
+                                    labelColor = Color(0xFFC62828)
+                                )
+                            )
+                        }
+                    }
+                    val votes = info.all
+                        ?.filter { it.value != null && it.value != 0 }
+                        ?.sortedByDescending { it.value ?: 0 }
+                        .orEmpty()
+                    if (votes.isEmpty()) {
+                        Text(
+                            "No votes yet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Spacer(Modifier.height(6.dp))
+                        votes.forEach { vote ->
+                            ReviewerVoteRow(vote)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewerVoteRow(vote: ApprovalInfo) {
+    val value = vote.value ?: 0
+    val scoreColor = when {
+        value > 0 -> Color(0xFF2E7D32)
+        value < 0 -> Color(0xFFC62828)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val scoreLabel = if (value > 0) "+$value" else "$value"
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            color = scoreColor.copy(alpha = 0.15f)
+        ) {
+            Text(
+                scoreLabel,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = scoreColor
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                vote.display,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            vote.email?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        vote.date?.take(19)?.replace('T', ' ')?.let { date ->
+            Text(
+                date,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReviewersSection(change: ChangeInfo) {
+    val reviewers = change.reviewers ?: return
+    val reviewersList = reviewers["REVIEWER"].orEmpty()
+    val ccList = reviewers["CC"].orEmpty()
+    if (reviewersList.isEmpty() && ccList.isEmpty()) return
+
+    Column {
+        Text("Reviewers", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        if (reviewersList.isNotEmpty()) {
+            Text("Reviewers", style = MaterialTheme.typography.labelMedium)
+            reviewersList.forEach { account ->
+                ReviewerAccountRow(account)
+            }
+        }
+        if (ccList.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text("CC", style = MaterialTheme.typography.labelMedium)
+            ccList.forEach { account ->
+                ReviewerAccountRow(account)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewerAccountRow(account: AccountInfo) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.Person,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(
+                account.displayName ?: account.name ?: account.username ?: "Unknown",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            account.email?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentsSection(comments: Map<String, List<CommentInfo>>) {
+    if (comments.isEmpty()) return
+    val flat = comments.entries
+        .flatMap { (path, list) -> list.map { path to it } }
+        .sortedByDescending { it.second.updated }
+
+    Column {
+        Text("Comments (${flat.size})", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        flat.forEach { (path, comment) ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            comment.author?.displayName
+                                ?: comment.author?.name
+                                ?: "Someone",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        comment.patchSet?.let {
+                            Text(
+                                "PS $it",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        comment.line?.let {
+                            Text(
+                                "line $it",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (comment.updated.isNotBlank()) {
+                            Text(
+                                comment.updated.take(19).replace('T', ' '),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    if (path.isNotBlank()) {
+                        Text(
+                            path,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(comment.message.trim(), style = MaterialTheme.typography.bodyMedium)
+                    if (comment.unresolved == true) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Unresolved",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -667,17 +916,40 @@ private fun ActionsSection(
 @Composable
 private fun MessagesSection(change: ChangeInfo) {
     val messages = change.messages ?: return
+    if (messages.isEmpty()) return
     Column {
-        Text("Messages", style = MaterialTheme.typography.titleMedium)
+        Text("Activity (${messages.size})", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
-        messages.takeLast(15).reversed().forEach { msg ->
+        messages.reversed().forEach { msg ->
             Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Column(Modifier.padding(12.dp)) {
-                    Text(
-                        "${msg.author?.name ?: "System"} · ${msg.date.take(19)}",
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                    Text(msg.message.trim(), style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            msg.author?.displayName ?: msg.author?.name ?: "System",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        msg.revisionNumber?.let {
+                            Text(
+                                "PS $it",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (msg.date.isNotBlank()) {
+                            Text(
+                                msg.date.take(19).replace('T', ' '),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(msg.message.trim(), style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
