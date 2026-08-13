@@ -304,6 +304,44 @@ class GerritRepository(
         }
     }
 
+    suspend fun listBranches(project: String): List<BranchInfo> {
+        val proj = encodeGerritFileId(project.trim())
+        AppLog.d("listBranches project=$project encoded=$proj")
+        return try {
+            val map = api().listBranches(proj)
+            map.map { (key, info) ->
+                // Prefer API key as short name when ref is missing
+                if (info.ref.isBlank()) info.copy(ref = "refs/heads/$key") else info
+            }.sortedBy { it.shortName.lowercase() }.also {
+                AppLog.d("listBranches returned ${it.size} branches")
+            }
+        } catch (e: Exception) {
+            AppLog.e("listBranches failed for $project", e)
+            throw e
+        }
+    }
+
+    /**
+     * Create a branch on [project].
+     * @param branch short name (no refs/heads/)
+     * @param revision base commit SHA, existing branch name, or "HEAD"
+     */
+    suspend fun createBranch(project: String, branch: String, revision: String): BranchInfo {
+        val proj = encodeGerritFileId(project.trim())
+        val short = branch.trim().removePrefix("refs/heads/")
+        val br = encodeGerritFileId(short)
+        val rev = revision.trim().ifBlank { "HEAD" }
+        AppLog.d("createBranch project=$project branch=$short revision=$rev")
+        return try {
+            api().createBranch(proj, br, BranchInput(revision = rev)).also {
+                AppLog.i("createBranch OK ${it.ref} @ ${it.revision}")
+            }
+        } catch (e: Exception) {
+            AppLog.e("createBranch failed for $project/$short", e)
+            throw e
+        }
+    }
+
     /**
      * Fetch file content as UTF-8 text.
      * Gerrit returns base64; we decode it. Binary files may produce garbage —

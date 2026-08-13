@@ -18,12 +18,18 @@ import com.quickgerrit.app.ui.change.FileEditorScreen
 import com.quickgerrit.app.ui.changes.ChangesScreen
 import com.quickgerrit.app.ui.changes.ChangesViewModel
 import com.quickgerrit.app.ui.logs.LogsScreen
+import com.quickgerrit.app.ui.projects.BranchesScreen
+import com.quickgerrit.app.ui.projects.BranchesViewModel
 import com.quickgerrit.app.ui.projects.ProjectsScreen
 import com.quickgerrit.app.ui.projects.ProjectsViewModel
 
 sealed class Screen(val route: String) {
     data object Changes : Screen("changes")
     data object Projects : Screen("projects")
+    data object Branches : Screen("branches/{project}") {
+        fun create(project: String) =
+            "branches/${java.net.URLEncoder.encode(project, "UTF-8")}"
+    }
     data object Accounts : Screen("accounts")
     data object Logs : Screen("logs")
     data object ChangeDetail : Screen("change/{changeId}") {
@@ -69,7 +75,26 @@ fun QuickGerritNavGraph() {
             ProjectsScreen(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
-                onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) }
+                onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) },
+                onOpenBranches = { project ->
+                    navController.navigate(Screen.Branches.create(project))
+                }
+            )
+        }
+        composable(
+            route = Screen.Branches.route,
+            arguments = listOf(navArgument("project") { type = NavType.StringType })
+        ) { entry ->
+            val project = java.net.URLDecoder.decode(
+                entry.arguments?.getString("project") ?: "",
+                "UTF-8"
+            )
+            val vm: BranchesViewModel = viewModel(
+                factory = BranchesViewModel.Factory(repo, project)
+            )
+            BranchesScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() }
             )
         }
         composable(Screen.Accounts.route) {

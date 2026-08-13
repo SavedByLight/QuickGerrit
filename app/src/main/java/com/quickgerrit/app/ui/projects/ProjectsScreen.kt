@@ -23,7 +23,8 @@ import com.quickgerrit.app.data.model.ProjectInfo
 fun ProjectsScreen(
     viewModel: ProjectsViewModel,
     onBack: () -> Unit,
-    onOpenChange: (String) -> Unit = {}
+    onOpenChange: (String) -> Unit = {},
+    onOpenBranches: (String) -> Unit = {}
 ) {
     val state by viewModel.ui.collectAsState()
     val filtered = remember(state.projects, state.filter) {
@@ -87,7 +88,8 @@ fun ProjectsScreen(
                     items(filtered, key = { it.id.ifBlank { it.name } }) { project ->
                         ProjectCard(
                             project = project,
-                            onClick = { createForProject = project.name }
+                            onOpenBranches = { onOpenBranches(project.name) },
+                            onCreateChange = { createForProject = project.name }
                         )
                     }
                 }
@@ -126,12 +128,13 @@ fun ProjectsScreen(
 @Composable
 private fun ProjectCard(
     project: ProjectInfo,
-    onClick: () -> Unit
+    onOpenBranches: () -> Unit,
+    onCreateChange: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClick = onOpenBranches)
     ) {
         Row(
             Modifier.padding(14.dp),
@@ -147,12 +150,19 @@ private fun ProjectCard(
                 project.state?.let {
                     Text(it, style = MaterialTheme.typography.labelSmall)
                 }
+                Text(
+                    "Tap to view branches",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Icon(
-                Icons.Default.Add,
-                contentDescription = "Create change",
-                tint = MaterialTheme.colorScheme.primary
-            )
+            IconButton(onClick = onCreateChange) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Create change",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }

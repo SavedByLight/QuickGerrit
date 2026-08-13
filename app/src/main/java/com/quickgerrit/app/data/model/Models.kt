@@ -141,6 +141,26 @@ data class ProjectInfo(
     @SerialName("web_links") val webLinks: List<WebLinkInfo>? = null
 )
 
+/** Gerrit branch from GET /projects/{project}/branches/. */
+@Serializable
+data class BranchInfo(
+    val ref: String = "",
+    val revision: String = "",
+    @SerialName("can_delete") val canDelete: Boolean? = null,
+    @SerialName("web_links") val webLinks: List<WebLinkInfo>? = null
+) {
+    /** Short branch name without refs/heads/. */
+    val shortName: String
+        get() = ref.removePrefix("refs/heads/").ifBlank { ref }
+}
+
+/** Body for PUT /projects/{project}/branches/{branch} — create a branch. */
+@Serializable
+data class BranchInput(
+    /** Commit SHA, existing branch name, or "HEAD". */
+    val revision: String
+)
+
 @Serializable
 data class WebLinkInfo(
     val name: String? = null,

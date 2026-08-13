@@ -133,6 +133,20 @@ interface GerritApi {
         @Query("type") type: String = "ALL"
     ): Map<String, ProjectInfo>
 
+    /** List branches for a project. Keys are short branch names. */
+    @GET("a/projects/{project}/branches/")
+    suspend fun listBranches(
+        @Path("project", encoded = true) project: String
+    ): Map<String, BranchInfo>
+
+    /** Create a branch. [branch] is the short name (e.g. "feature/foo"). */
+    @PUT("a/projects/{project}/branches/{branch}")
+    suspend fun createBranch(
+        @Path("project", encoded = true) project: String,
+        @Path("branch", encoded = true) branch: String,
+        @Body input: BranchInput
+    ): BranchInfo
+
     // —— File content & change edit (in-app editor) ——
 
     /** File content is base64-encoded plain text (or binary). */
