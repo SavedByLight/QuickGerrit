@@ -38,7 +38,8 @@ interface GerritApi {
             "DETAILED_LABELS",
             "DETAILED_ACCOUNTS",
             "MESSAGES",
-            "REVIEWERS",
+            // REVIEWERS is not supported on older Gerrit (400: not a valid -o value).
+            // Reviewer votes still appear via DETAILED_LABELS → labels.*.all.
             "REVIEWER_UPDATES",
             "SUBMITTABLE",
             "CHANGE_ACTIONS",
