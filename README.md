@@ -38,18 +38,17 @@ The app authenticates with HTTP Basic on `/a/...` endpoints and strips Gerrit’
 
 ## CI / GitHub Releases
 
-Every push to `main`/`master` (and manual **workflow_dispatch**) builds **both** APKs and publishes a GitHub Release:
+Every push to `main`/`master` (and manual **workflow_dispatch**) builds **one** APK and publishes a GitHub Release:
 
 | Asset | Description |
 |-------|-------------|
-| `QuickGerrit-release.apk` | Release build (preferred for daily use) |
-| `QuickGerrit-debug.apk` | Debug build with verbose logging |
-| `QuickGerrit-<ver>-release.apk` | Versioned release APK |
-| `QuickGerrit-<ver>-debug.apk` | Versioned debug APK |
+| `QuickGerrit-debug.apk` | App build (stable name for in-app updates) |
+
+The release body includes the **last commit** (subject + message) so the in-app updater can show what changed.
 
 Version scheme: `1.0.<github.run_number>` (also used as `versionCode`).
 
-### Secrets (optional, for signed release)
+### Secrets (optional, for signed builds)
 
 | Secret | Purpose |
 |--------|---------|
@@ -58,7 +57,7 @@ Version scheme: `1.0.<github.run_number>` (also used as `versionCode`).
 | `KEY_ALIAS` | Key alias |
 | `KEY_PASSWORD` | Key password |
 
-Without these, the release APK is still published (unsigned).
+Without these, the committed `app/ci.keystore` is used so every CI build shares the same signing cert.
 
 ### In-app updates
 

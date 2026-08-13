@@ -112,8 +112,9 @@ fun UpdateCheckButton(
                     )
                     info.releaseNotes?.takeIf { it.isNotBlank() }?.let { notes ->
                         Spacer(Modifier.height(12.dp))
-                        Text("Release notes", style = MaterialTheme.typography.labelMedium)
-                        Text(notes.take(800), style = MaterialTheme.typography.bodySmall)
+                        Text("What's new", style = MaterialTheme.typography.labelMedium)
+                        // Show full last-commit message from the GitHub release body
+                        Text(notes.take(2000), style = MaterialTheme.typography.bodySmall)
                     }
                     if (downloading) {
                         Spacer(Modifier.height(16.dp))
