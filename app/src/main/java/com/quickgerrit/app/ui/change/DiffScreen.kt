@@ -12,15 +12,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quickgerrit.app.data.model.DiffContent
 import com.quickgerrit.app.data.model.DiffInfo
 import com.quickgerrit.app.data.repository.GerritRepository
 import com.quickgerrit.app.ui.theme.CodeColors
+import com.quickgerrit.app.ui.theme.SourceLanguage
+import com.quickgerrit.app.ui.theme.SyntaxColors
+import com.quickgerrit.app.ui.theme.highlightSyntax
+import com.quickgerrit.app.ui.theme.languageFromPath
 import com.quickgerrit.app.ui.theme.rememberCodeColors
+import com.quickgerrit.app.ui.theme.rememberSyntaxColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +46,8 @@ fun DiffScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var unified by remember { mutableStateOf(true) }
     val codeColors = rememberCodeColors()
+    val syntaxColors = rememberSyntaxColors()
+    val language = remember(filePath) { languageFromPath(filePath) }
 
     LaunchedEffect(changeId, revisionId, filePath) {
         loading = true
@@ -84,8 +95,11 @@ fun DiffScreen(
                 loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 error != null -> Text(error!!, Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.error)
                 diff != null -> {
-                    if (unified) UnifiedDiffView(diff!!.content.orEmpty(), codeColors)
-                    else SideBySideDiffView(diff!!.content.orEmpty(), codeColors)
+                    if (unified) {
+                        UnifiedDiffView(diff!!.content.orEmpty(), codeColors, syntaxColors, language)
+                    } else {
+                        SideBySideDiffView(diff!!.content.orEmpty(), codeColors, syntaxColors, language)
+                    }
                 }
             }
         }
@@ -114,7 +128,12 @@ private fun LanguageChip(filePath: String, colors: CodeColors) {
 }
 
 @Composable
-private fun UnifiedDiffView(content: List<DiffContent>, colors: CodeColors) {
+private fun UnifiedDiffView(
+    content: List<DiffContent>,
+    colors: CodeColors,
+    syntax: SyntaxColors,
+    language: SourceLanguage
+) {
     val scroll = rememberScrollState()
     val hScroll = rememberScrollState()
     Column(
@@ -128,12 +147,12 @@ private fun UnifiedDiffView(content: List<DiffContent>, colors: CodeColors) {
             when {
                 block.ab != null -> {
                     block.ab.forEach { line ->
-                        DiffLine(line, DiffLineType.CONTEXT, colors)
+                        DiffLine(line, DiffLineType.CONTEXT, colors, syntax, language)
                     }
                 }
                 else -> {
-                    block.a?.forEach { line -> DiffLine(line, DiffLineType.REMOVED, colors) }
-                    block.b?.forEach { line -> DiffLine(line, DiffLineType.ADDED, colors) }
+                    block.a?.forEach { line -> DiffLine(line, DiffLineType.REMOVED, colors, syntax, language) }
+                    block.b?.forEach { line -> DiffLine(line, DiffLineType.ADDED, colors, syntax, language) }
                 }
             }
         }
@@ -141,7 +160,12 @@ private fun UnifiedDiffView(content: List<DiffContent>, colors: CodeColors) {
 }
 
 @Composable
-private fun SideBySideDiffView(content: List<DiffContent>, colors: CodeColors) {
+private fun SideBySideDiffView(
+    content: List<DiffContent>,
+    colors: CodeColors,
+    syntax: SyntaxColors,
+    language: SourceLanguage
+) {
     val scroll = rememberScrollState()
     Row(
         Modifier
@@ -152,14 +176,16 @@ private fun SideBySideDiffView(content: List<DiffContent>, colors: CodeColors) {
         Column(Modifier.weight(1f)) {
             content.forEach { block ->
                 when {
-                    block.ab != null -> block.ab.forEach { DiffLine(it, DiffLineType.CONTEXT, colors, compact = true) }
+                    block.ab != null -> block.ab.forEach {
+                        DiffLine(it, DiffLineType.CONTEXT, colors, syntax, language, compact = true)
+                    }
                     else -> {
                         val a = block.a.orEmpty()
                         val b = block.b.orEmpty()
                         val max = maxOf(a.size, b.size)
                         for (i in 0 until max) {
-                            if (i < a.size) DiffLine(a[i], DiffLineType.REMOVED, colors, compact = true)
-                            else DiffLine("", DiffLineType.EMPTY, colors, compact = true)
+                            if (i < a.size) DiffLine(a[i], DiffLineType.REMOVED, colors, syntax, language, compact = true)
+                            else DiffLine("", DiffLineType.EMPTY, colors, syntax, language, compact = true)
                         }
                     }
                 }
@@ -169,14 +195,16 @@ private fun SideBySideDiffView(content: List<DiffContent>, colors: CodeColors) {
         Column(Modifier.weight(1f)) {
             content.forEach { block ->
                 when {
-                    block.ab != null -> block.ab.forEach { DiffLine(it, DiffLineType.CONTEXT, colors, compact = true) }
+                    block.ab != null -> block.ab.forEach {
+                        DiffLine(it, DiffLineType.CONTEXT, colors, syntax, language, compact = true)
+                    }
                     else -> {
                         val a = block.a.orEmpty()
                         val b = block.b.orEmpty()
                         val max = maxOf(a.size, b.size)
                         for (i in 0 until max) {
-                            if (i < b.size) DiffLine(b[i], DiffLineType.ADDED, colors, compact = true)
-                            else DiffLine("", DiffLineType.EMPTY, colors, compact = true)
+                            if (i < b.size) DiffLine(b[i], DiffLineType.ADDED, colors, syntax, language, compact = true)
+                            else DiffLine("", DiffLineType.EMPTY, colors, syntax, language, compact = true)
                         }
                     }
                 }
@@ -192,6 +220,8 @@ private fun DiffLine(
     text: String,
     type: DiffLineType,
     colors: CodeColors,
+    syntax: SyntaxColors,
+    language: SourceLanguage,
     compact: Boolean = false
 ) {
     val bg = when (type) {
@@ -200,7 +230,7 @@ private fun DiffLine(
         DiffLineType.EMPTY -> colors.emptyBg
         DiffLineType.CONTEXT -> colors.contextBg
     }
-    val fg = when (type) {
+    val prefixColor = when (type) {
         DiffLineType.ADDED -> colors.addedFg
         DiffLineType.REMOVED -> colors.removedFg
         DiffLineType.EMPTY -> Color.Transparent
@@ -211,14 +241,30 @@ private fun DiffLine(
         DiffLineType.REMOVED -> "- "
         else -> "  "
     }
+
+    val highlighted = remember(text, language, syntax) {
+        if (text.isEmpty() || type == DiffLineType.EMPTY) AnnotatedString("")
+        else highlightSyntax(text, language, syntax)
+    }
+
+    val line = remember(highlighted, prefix, prefixColor) {
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = prefixColor, fontWeight = FontWeight.Medium)) {
+                append(prefix)
+            }
+            append(highlighted)
+        }
+    }
+
     Text(
-        text = prefix + text,
+        text = line,
         fontFamily = FontFamily.Monospace,
         fontSize = if (compact) 11.sp else 12.sp,
         modifier = Modifier
             .fillMaxWidth()
             .background(bg)
             .padding(horizontal = 4.dp, vertical = 1.dp),
-        color = fg
+        color = syntax.plain,
+        style = LocalTextStyle.current.copy(lineHeight = if (compact) 14.sp else 16.sp)
     )
 }

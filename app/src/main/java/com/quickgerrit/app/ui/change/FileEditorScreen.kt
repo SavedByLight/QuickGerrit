@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -20,7 +21,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.ui.theme.highlightSyntax
+import com.quickgerrit.app.ui.theme.languageFromPath
 import com.quickgerrit.app.ui.theme.rememberCodeColors
+import com.quickgerrit.app.ui.theme.rememberSyntaxColors
 import kotlinx.coroutines.launch
 
 /**
@@ -56,6 +60,11 @@ fun FileEditorScreen(
 
     val dirty = content != original
     val codeColors = rememberCodeColors()
+    val syntaxColors = rememberSyntaxColors()
+    val language = remember(filePath) { languageFromPath(filePath) }
+    val highlighted = remember(content, language, syntaxColors) {
+        highlightSyntax(content, language, syntaxColors)
+    }
 
     LaunchedEffect(changeId, revisionId, filePath, project, branch) {
         loading = true
@@ -245,25 +254,35 @@ fun FileEditorScreen(
                     }
                 }
                 else -> {
-                    // Built-in monospace text editor
+                    // Highlighted monospace editor: coloured Text under transparent BasicTextField
                     val vScroll = rememberScrollState()
                     val hScroll = rememberScrollState()
-                    BasicTextField(
-                        value = content,
-                        onValueChange = { content = it },
-                        modifier = Modifier
+                    val mono = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        color = syntaxColors.plain
+                    )
+                    Box(
+                        Modifier
                             .fillMaxSize()
                             .padding(8.dp)
                             .verticalScroll(vScroll)
-                            .horizontalScroll(hScroll),
-                        textStyle = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            lineHeight = 18.sp
-                        ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
-                    )
+                            .horizontalScroll(hScroll)
+                    ) {
+                        Text(
+                            text = highlighted,
+                            style = mono,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        BasicTextField(
+                            value = content,
+                            onValueChange = { content = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = mono.copy(color = Color.Transparent),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                        )
+                    }
                 }
             }
         }
