@@ -133,11 +133,14 @@ interface GerritApi {
         @Query("type") type: String = "ALL"
     ): Map<String, ProjectInfo>
 
-    /** List branches for a project. Keys are short branch names. */
+    /**
+     * List branches for a project.
+     * Gerrit returns a JSON array of [BranchInfo] (not a map).
+     */
     @GET("a/projects/{project}/branches/")
     suspend fun listBranches(
         @Path("project", encoded = true) project: String
-    ): Map<String, BranchInfo>
+    ): List<BranchInfo>
 
     /** Create a branch. [branch] is the short name (e.g. "feature/foo"). */
     @PUT("a/projects/{project}/branches/{branch}")

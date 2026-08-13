@@ -308,13 +308,10 @@ class GerritRepository(
         val proj = encodeGerritFileId(project.trim())
         AppLog.d("listBranches project=$project encoded=$proj")
         return try {
-            val map = api().listBranches(proj)
-            map.map { (key, info) ->
-                // Prefer API key as short name when ref is missing
-                if (info.ref.isBlank()) info.copy(ref = "refs/heads/$key") else info
-            }.sortedBy { it.shortName.lowercase() }.also {
-                AppLog.d("listBranches returned ${it.size} branches")
-            }
+            // Gerrit returns a JSON array of BranchInfo
+            api().listBranches(proj)
+                .sortedBy { it.shortName.lowercase() }
+                .also { AppLog.d("listBranches returned ${it.size} branches") }
         } catch (e: Exception) {
             AppLog.e("listBranches failed for $project", e)
             throw e
