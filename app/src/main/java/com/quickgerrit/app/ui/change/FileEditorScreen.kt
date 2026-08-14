@@ -254,9 +254,10 @@ fun FileEditorScreen(
                     }
                 }
                 else -> {
-                    // Highlighted monospace editor: coloured Text under transparent BasicTextField
+                    // Highlighted monospace editor: coloured Text under transparent BasicTextField.
+                    // Do not put horizontalScroll on the outer box — infinite max width collapses
+                    // multi-line layout. Soft-wrap long lines; real \n still break lines.
                     val vScroll = rememberScrollState()
-                    val hScroll = rememberScrollState()
                     val mono = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
@@ -268,7 +269,6 @@ fun FileEditorScreen(
                             .fillMaxSize()
                             .padding(8.dp)
                             .verticalScroll(vScroll)
-                            .horizontalScroll(hScroll)
                     ) {
                         Text(
                             text = highlighted,
@@ -280,7 +280,8 @@ fun FileEditorScreen(
                             onValueChange = { content = it },
                             modifier = Modifier.fillMaxWidth(),
                             textStyle = mono.copy(color = Color.Transparent),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            softWrap = true
                         )
                     }
                 }

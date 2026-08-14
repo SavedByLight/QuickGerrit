@@ -533,28 +533,41 @@ class GerritRepository(
             throw Exception("HTTP ${resp.code()} ${err.take(300)}")
         }
         val body = resp.body()?.string().orEmpty()
-        // Gerrit sets this when the body is base64 of the file bytes
         val encoding = resp.headers()["X-FYI-Content-Encoding"]
             ?: resp.headers()["x-fyi-content-encoding"]
             ?: ""
-        AppLog.d("file content encoding='$encoding' path=$filePath bytes=${body.length}")
-        return if (encoding.equals("base64", ignoreCase = true)) {
-            forceDecodeBase64(body, filePath)
-        } else {
-            decodeBase64Content(body, filePath)
+        // Gerrit /content always base64-encodes file bytes. Prefer that path.
+        // Heuristic decode only if the header is absent AND body is clearly plain text.
+        val text = when {
+            encoding.equals("base64", ignoreCase = true) -> forceDecodeBase64(body)
+            isProbablyBase64(body.replace(Regex("\\s+"), "")) -> forceDecodeBase64(body)
+            else -> decodeBase64Content(body, filePath)
         }
+        val normalized = normalizeNewlines(text)
+        AppLog.d(
+            "file content path=$filePath encoding='$encoding' " +
+                "raw=${body.length} text=${normalized.length} lines=${normalized.count { it == '\n' } + 1}"
+        )
+        return normalized
     }
 
-    /** Unconditional base64 decode when Gerrit says the body is base64. */
-    private fun forceDecodeBase64(raw: String, filePath: String): String {
+    /** Unconditional base64 decode of Gerrit file body → editor text with real newlines. */
+    private fun forceDecodeBase64(raw: String): String {
         var payload = raw.trim()
         val dataUri = Regex("^data:[^;]*;base64,", RegexOption.IGNORE_CASE)
         payload = payload.replace(dataUri, "")
+        // Whitespace only removed from the *base64 transport*, not from file contents
         val compact = payload.replace(Regex("\\s+"), "")
         val bytes = decodeBase64Bytes(compact)
-            ?: return decodeBase64Content(raw, filePath)
-        return bytesToEditorText(bytes)
+            ?: return normalizeNewlines(raw.trim().replace("\u0000", ""))
+        return normalizeNewlines(bytesToEditorText(bytes))
     }
+
+    /** Normalize CR/LF so the editor always sees Unix newlines. */
+    private fun normalizeNewlines(s: String): String {
+        return s.replace("\r\n", "\n").replace("\r", "\n")
+    }
+
 
 
     /** Write file content into the change edit (creates edit if needed). */
