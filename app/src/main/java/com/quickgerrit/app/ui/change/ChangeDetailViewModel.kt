@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 data class ChangeDetailUiState(
@@ -47,20 +49,29 @@ class ChangeDetailViewModel(
             AppLog.d("ChangeDetail load $changeId")
             _ui.update { it.copy(isLoading = true, error = null) }
             try {
+                // Detail first so the screen can render subject/status ASAP
                 val detail = repo.getChangeDetail(changeId)
                 val rev = detail.currentRevision ?: detail.revisions?.keys?.firstOrNull()
-                val files = if (rev != null) {
-                    runCatching { repo.listFiles(changeId, rev) }.getOrElse { emptyMap() }
-                } else emptyMap()
-                val comments = runCatching { repo.listComments(changeId) }.getOrElse { emptyMap() }
                 _ui.update {
                     it.copy(
                         change = detail,
-                        files = files,
-                        comments = comments,
                         selectedRevision = rev,
                         isLoading = false
                     )
+                }
+                // Files + comments in parallel (independent endpoints)
+                coroutineScope {
+                    val filesDef = async {
+                        if (rev != null) {
+                            runCatching { repo.listFiles(changeId, rev) }.getOrElse { emptyMap() }
+                        } else emptyMap()
+                    }
+                    val commentsDef = async {
+                        runCatching { repo.listComments(changeId) }.getOrElse { emptyMap() }
+                    }
+                    val files = filesDef.await()
+                    val comments = commentsDef.await()
+                    _ui.update { it.copy(files = files, comments = comments) }
                 }
             } catch (e: Exception) {
                 AppLog.e("ChangeDetail load failed for $changeId", e)

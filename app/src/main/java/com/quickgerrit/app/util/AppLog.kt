@@ -44,7 +44,7 @@ data class LogEntry(
 object AppLog {
     private const val TAG = "QuickGerrit"
     /** Large enough to keep a full session; export always dumps the entire buffer. */
-    private const val MAX_ENTRIES = 20_000
+    private const val MAX_ENTRIES = 5_000
 
     private val buffer = CopyOnWriteArrayList<LogEntry>()
     private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
@@ -165,23 +165,25 @@ object AppLog {
         message: String,
         throwable: Throwable? = null
     ) {
+        // Cap message size so huge HTTP dumps cannot freeze the UI / export
+        val msg = if (message.length > 2_000) message.take(2_000) + "…" else message
         val entry = LogEntry(
             timeMillis = System.currentTimeMillis(),
             level = level,
             tag = tag,
-            message = message,
-            throwableMessage = throwable?.let {
-                buildString {
-                    append(it.javaClass.simpleName)
-                    if (!it.message.isNullOrBlank()) append(": ").append(it.message)
-                }
-            },
-            stackTrace = throwable?.stackTraceToString()
+            message = msg,
+            throwableMessage = throwable?.message,
+            stackTrace = throwable?.stackTraceToString()?.take(4_000)
         )
         buffer.add(entry)
-        while (buffer.size > MAX_ENTRIES) {
-            buffer.removeAt(0)
+        // Drop oldest in batches to avoid O(n) per entry when full
+        if (buffer.size > MAX_ENTRIES) {
+            val overflow = buffer.size - MAX_ENTRIES
+            buffer.subList(0, overflow).clear()
         }
-        _entries.value = buffer.toList()
+        // Throttle StateFlow emissions — every entry was forcing Compose recomposition
+        if (buffer.size % 5 == 0 || level == LogLevel.E || level == LogLevel.W) {
+            _entries.value = buffer.toList()
+        }
     }
 }

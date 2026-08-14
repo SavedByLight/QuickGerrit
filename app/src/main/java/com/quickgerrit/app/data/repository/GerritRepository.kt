@@ -41,21 +41,25 @@ class GerritRepository(
     }
 
     suspend fun addAccount(account: GerritAccount) = accountStore.addAccount(account).also {
+        GerritClientFactory.invalidate()
         AppLog.i("Account added: ${it.name} (${it.id})")
     }
 
     suspend fun updateAccount(account: GerritAccount) {
         accountStore.updateAccount(account)
+        GerritClientFactory.invalidate(account.id)
         AppLog.i("Account updated: ${account.name} (${account.id})")
     }
 
     suspend fun removeAccount(id: String) {
         accountStore.removeAccount(id)
+        GerritClientFactory.invalidate(id)
         AppLog.i("Account removed: $id")
     }
 
     suspend fun setActive(id: String) {
         accountStore.setActiveAccount(id)
+        // Client is keyed by account; no need to clear all, but next api() picks new active
         AppLog.i("Active account set to: $id")
     }
 

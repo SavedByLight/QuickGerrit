@@ -18,12 +18,8 @@ interface GerritApi {
         @Query("S") start: Int = 0,
         @Query("o") options: List<String> = listOf(
             "LABELS",
-            "DETAILED_LABELS",
             "CURRENT_REVISION",
-            "CURRENT_COMMIT",
             "DETAILED_ACCOUNTS",
-            "MESSAGES",
-            "REVIEWED",
             "SUBMITTABLE",
             "CHANGE_ACTIONS"
         )
