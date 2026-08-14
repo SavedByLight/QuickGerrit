@@ -283,3 +283,10 @@ data class EditInfo(
     val changeId: String? = null,
     @SerialName("change_id") val changeIdSnake: String? = null
 )
+
+
+/** Body for POST /changes/{id}/submit */
+@Serializable
+data class SubmitInput(
+    @SerialName("wait_for_merge") val waitForMerge: Boolean = true
+)

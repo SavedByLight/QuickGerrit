@@ -154,16 +154,28 @@ class ChangeDetailViewModel(
         }
     }
 
+    /** Submit / merge the change into its target branch. */
     fun submit() {
         viewModelScope.launch {
             _ui.update { it.copy(actionInProgress = true) }
             try {
-                repo.submit(changeId)
-                _ui.update { it.copy(actionInProgress = false, snackbar = "Submitted") }
+                val result = repo.submit(changeId, waitForMerge = true)
+                val status = result.status.ifBlank { "MERGED" }
+                _ui.update {
+                    it.copy(
+                        actionInProgress = false,
+                        snackbar = "Change merged ($status)"
+                    )
+                }
                 load()
             } catch (e: Exception) {
-                AppLog.e("submit failed", e)
-                _ui.update { it.copy(actionInProgress = false, snackbar = e.message) }
+                AppLog.e("submit (merge) failed", e)
+                _ui.update {
+                    it.copy(
+                        actionInProgress = false,
+                        snackbar = e.message ?: "Merge failed"
+                    )
+                }
             }
         }
     }

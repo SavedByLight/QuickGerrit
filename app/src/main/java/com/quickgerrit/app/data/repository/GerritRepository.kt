@@ -199,17 +199,23 @@ class GerritRepository(
         }
     }
 
-    suspend fun submit(changeId: String): ChangeInfo {
-        AppLog.i("submit $changeId")
+    /**
+     * Submit (merge) the change into its destination branch.
+     * Gerrit term is "submit"; this merges the approved change.
+     */
+    suspend fun submit(changeId: String, waitForMerge: Boolean = true): ChangeInfo {
+        AppLog.i("submit (merge) $changeId waitForMerge=$waitForMerge")
         return try {
-            api().submit(changeId).also {
-                AppLog.i("submit succeeded")
+            api().submit(changeId, SubmitInput(waitForMerge = waitForMerge)).also {
+                AppLog.i("submit (merge) OK status=${it.status}")
             }
         } catch (e: Exception) {
-            AppLog.e("submit failed", e)
-            throw e
+            val detail = httpErrorDetail(e)
+            AppLog.e("submit (merge) failed: $detail", e)
+            throw Exception(detail, e)
         }
     }
+
 
     suspend fun createChange(input: ChangeInput): ChangeInfo {
         // Normalize branch: Gerrit wants the short name (no refs/heads/)

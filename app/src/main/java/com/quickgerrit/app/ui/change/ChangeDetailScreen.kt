@@ -876,6 +876,11 @@ private fun ActionsSection(
     onWip: () -> Unit,
     onReady: () -> Unit
 ) {
+    var confirmMerge by remember { mutableStateOf(false) }
+    val canMerge = change.status.equals("NEW", ignoreCase = true) &&
+        change.workInProgress != true &&
+        (change.submittable == true || change.actions?.containsKey("submit") == true)
+
     Column {
         Text("Actions", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
@@ -897,10 +902,12 @@ private fun ActionsSection(
                     OutlinedButton(onClick = onAbandon, enabled = !inProgress) {
                         Text("Abandon")
                     }
-                    if (change.submittable == true) {
-                        Button(onClick = onSubmit, enabled = !inProgress) {
-                            Text("Submit")
-                        }
+                    // Merge = Gerrit "submit" into the target branch
+                    Button(
+                        onClick = { confirmMerge = true },
+                        enabled = !inProgress && canMerge
+                    ) {
+                        Text("Merge")
                     }
                 }
                 "ABANDONED" -> {
@@ -908,8 +915,53 @@ private fun ActionsSection(
                         Text("Restore")
                     }
                 }
+                "MERGED" -> {
+                    Text(
+                        "Already merged",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
+        if (change.status.equals("NEW", ignoreCase = true) && !canMerge) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                when {
+                    change.workInProgress == true ->
+                        "Mark the change Active and satisfy Code-Review before merging."
+                    change.submittable != true ->
+                        "Not submittable yet — approvals (e.g. Code-Review +2) are still required."
+                    else -> "Merge is not available for this change."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    if (confirmMerge) {
+        AlertDialog(
+            onDismissRequest = { confirmMerge = false },
+            title = { Text("Merge change?") },
+            text = {
+                Text(
+                    "Submit change ${change.number} into ${change.project} " +
+                        "(${change.branch})? This merges it on the Gerrit server."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmMerge = false
+                        onSubmit()
+                    }
+                ) { Text("Merge") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmMerge = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 

@@ -111,7 +111,7 @@ interface GerritApi {
     @POST("a/changes/{changeId}/submit")
     suspend fun submit(
         @Path("changeId", encoded = true) changeId: String,
-        @Body body: Map<String, String> = emptyMap()
+        @Body body: SubmitInput = SubmitInput()
     ): ChangeInfo
 
     /** Mark change as Work-In-Progress. */
