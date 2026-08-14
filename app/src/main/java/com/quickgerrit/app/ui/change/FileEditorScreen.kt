@@ -134,12 +134,13 @@ fun FileEditorScreen(
             saving = true
             error = null
             status = null
+            // Always read from the live text field state
             val body = textState.text.toString()
             try {
                 repository.putEditFile(changeId, filePath, body)
                 content = body
                 original = body
-                status = "Saved to change edit"
+                status = "Saved to change edit (${body.length} chars)"
                 snackbar.showSnackbar("Saved to change edit")
             } catch (e: Exception) {
                 error = e.message
@@ -152,23 +153,25 @@ fun FileEditorScreen(
 
     fun publish() {
         scope.launch {
+            // ALWAYS write the file into the change edit first. Skipping save when
+            // body == original left Gerrit with no open edit, so publish failed.
             val body = textState.text.toString()
-            if (body != original) {
-                saving = true
-                try {
-                    repository.putEditFile(changeId, filePath, body)
-                    content = body
-                    original = body
-                } catch (e: Exception) {
-                    error = e.message
-                    saving = false
-                    snackbar.showSnackbar(e.message ?: "Save failed")
-                    return@launch
-                }
-                saving = false
-            }
-            publishing = true
+            saving = true
             error = null
+            try {
+                repository.putEditFile(changeId, filePath, body)
+                content = body
+                original = body
+                status = "Saved to change edit"
+            } catch (e: Exception) {
+                error = e.message
+                saving = false
+                snackbar.showSnackbar(e.message ?: "Save failed — cannot publish")
+                return@launch
+            }
+            saving = false
+
+            publishing = true
             try {
                 repository.publishEdit(changeId)
                 status = "Published as new patch set"
@@ -228,7 +231,7 @@ fun FileEditorScreen(
                 actions = {
                     IconButton(
                         onClick = { save() },
-                        enabled = !loading && !saving && !publishing && dirty
+                        enabled = !loading && !saving && !publishing
                     ) {
                         if (saving) {
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -271,7 +274,7 @@ fun FileEditorScreen(
                     )
                     FilledTonalButton(
                         onClick = { save() },
-                        enabled = !loading && !saving && !publishing && dirty
+                        enabled = !loading && !saving && !publishing
                     ) { Text("Save") }
                     Spacer(Modifier.width(8.dp))
                     Button(

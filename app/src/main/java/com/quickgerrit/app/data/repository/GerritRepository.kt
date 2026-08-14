@@ -659,7 +659,7 @@ class GerritRepository(
     /** Write file content into the change edit (creates edit if needed). */
     suspend fun putEditFile(changeId: String, filePath: String, content: String) {
         val encoded = encodeGerritFileId(filePath)
-        AppLog.i("putEditFile $changeId path=$filePath (${content.length} chars)")
+        AppLog.i("putEditFile $changeId path=$filePath encoded=$encoded (${content.length} chars)")
         try {
             val mediaType = "text/plain; charset=UTF-8".toMediaType()
             val body = content.toRequestBody(mediaType)
@@ -667,7 +667,13 @@ class GerritRepository(
             if (!resp.isSuccessful) {
                 throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
             }
-            AppLog.i("putEditFile OK")
+            AppLog.i("putEditFile OK HTTP ${resp.code()}")
+            // Confirm Gerrit now has an open edit
+            val open = hasEdit(changeId)
+            AppLog.i("putEditFile hasEdit after save → $open")
+            if (!open) {
+                AppLog.w("putEditFile succeeded but hasEdit is still false")
+            }
         } catch (e: Exception) {
             AppLog.e("putEditFile failed", e)
             throw Exception(httpErrorDetail(e), e)
