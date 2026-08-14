@@ -185,6 +185,21 @@ interface GerritApi {
         @Body body: okhttp3.RequestBody
     ): okhttp3.ResponseBody?
 
+    /**
+     * Current change edit, if any.
+     * 204 / empty when no edit exists; 200 + EditInfo when it does.
+     */
+    @GET("a/changes/{changeId}/edit")
+    suspend fun getEdit(
+        @Path("changeId", encoded = true) changeId: String
+    ): Response<EditInfo>
+
+    /** Commit message of the current change edit (plain text). */
+    @GET("a/changes/{changeId}/edit:message")
+    suspend fun getEditMessage(
+        @Path("changeId", encoded = true) changeId: String
+    ): Response<okhttp3.ResponseBody>
+
     /** Publish change edit as a new patch set. */
     @POST("a/changes/{changeId}/edit:publish")
     suspend fun publishEdit(

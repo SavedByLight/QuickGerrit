@@ -654,14 +654,35 @@ class GerritRepository(
         }
     }
 
+    /** True if Gerrit currently has an open change-edit for this change. */
+    suspend fun hasEdit(changeId: String): Boolean {
+        return try {
+            val resp = api().getEdit(changeId)
+            // 200 = edit exists; 204/404 = none
+            val exists = resp.isSuccessful && resp.code() != 204 && resp.body() != null
+            AppLog.d("hasEdit $changeId → $exists (HTTP ${resp.code()})")
+            exists
+        } catch (e: Exception) {
+            AppLog.w("hasEdit check failed: ${e.message}")
+            false
+        }
+    }
+
     /** Publish the change edit as a new patch set. */
     suspend fun publishEdit(changeId: String) {
         AppLog.i("publishEdit $changeId")
         try {
+            if (!hasEdit(changeId)) {
+                throw Exception(
+                    "No open change edit to publish. Save a file or change the commit message first."
+                )
+            }
             api().publishEdit(changeId)
             AppLog.i("publishEdit OK")
         } catch (e: Exception) {
             AppLog.e("publishEdit failed", e)
+            // Don't double-wrap our own clear messages
+            if (e.message?.contains("No open change edit") == true) throw e
             throw Exception(httpErrorDetail(e), e)
         }
     }
@@ -688,16 +709,49 @@ class GerritRepository(
         }
     }
 
-    /** Update commit message via change edit (must publishEdit afterwards). */
-    suspend fun putEditMessage(changeId: String, message: String) {
+    /**
+     * Update commit message via change edit (must publishEdit afterwards).
+     * If Gerrit says the message is unchanged (HTTP 409), that is treated as OK —
+     * an edit is only created when the message actually differs or a file was edited.
+     * @return true if the message was written into an edit; false if it was already the same
+     */
+    suspend fun putEditMessage(changeId: String, message: String): Boolean {
         AppLog.i("putEditMessage $changeId")
         try {
             api().putEditMessage(changeId, mapOf("message" to message))
             AppLog.i("putEditMessage OK")
+            return true
         } catch (e: Exception) {
+            val detail = httpErrorDetail(e)
+            // Gerrit: "New commit message cannot be same as existing commit message"
+            if (detail.contains("same as existing", ignoreCase = true)) {
+                AppLog.w("putEditMessage: message unchanged ($detail)")
+                return false
+            }
             AppLog.e("putEditMessage failed", e)
-            throw Exception(httpErrorDetail(e), e)
+            throw Exception(detail, e)
         }
+    }
+
+    /**
+     * Apply commit message (if changed) and publish the open edit as a new patch set.
+     * Handles the common case where the message is identical and only file edits exist.
+     */
+    suspend fun updateCommitMessageAndPublish(changeId: String, message: String) {
+        val msg = message.trim()
+        if (msg.isEmpty()) throw Exception("Commit message cannot be empty")
+        val wrote = putEditMessage(changeId, msg)
+        val editOpen = hasEdit(changeId)
+        if (!editOpen) {
+            if (!wrote) {
+                throw Exception(
+                    "Nothing to publish — commit message is unchanged and there is no open change edit. " +
+                        "Edit a file (Save) or change the message first."
+                )
+            }
+            // Message write claimed success but hasEdit is false — still try publish
+        }
+        publishEdit(changeId)
     }
 }
 

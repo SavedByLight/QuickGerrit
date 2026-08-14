@@ -272,3 +272,14 @@ data class GerritAccount(
     val httpPassword: String,
     val isDefault: Boolean = false
 )
+
+
+/** Info from GET /changes/{id}/edit — present only while a change edit is open. */
+@Serializable
+data class EditInfo(
+    val commit: CommitInfo? = null,
+    val baseRevision: String? = null,
+    @SerialName("base_revision") val baseRevisionSnake: String? = null,
+    val changeId: String? = null,
+    @SerialName("change_id") val changeIdSnake: String? = null
+)

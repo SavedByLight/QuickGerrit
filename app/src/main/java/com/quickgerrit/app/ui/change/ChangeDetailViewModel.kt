@@ -262,10 +262,10 @@ class ChangeDetailViewModel(
         viewModelScope.launch {
             _ui.update { it.copy(actionInProgress = true) }
             try {
-                repo.putEditMessage(changeId, msg)
-                repo.publishEdit(changeId)
+                // Handles "message unchanged" 409 and "no edit" clearly
+                repo.updateCommitMessageAndPublish(changeId, msg)
                 _ui.update {
-                    it.copy(actionInProgress = false, snackbar = "Commit message published as new patch set")
+                    it.copy(actionInProgress = false, snackbar = "Published as new patch set")
                 }
                 load()
             } catch (e: Exception) {
