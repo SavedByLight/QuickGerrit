@@ -550,7 +550,7 @@ class GerritRepository(
         var payload = raw.trim()
         val dataUri = Regex("^data:[^;]*;base64,", RegexOption.IGNORE_CASE)
         payload = payload.replace(dataUri, "")
-        val compact = payload.replace(Regex("\s+"), "")
+        val compact = payload.replace(Regex("\\s+"), "")
         val bytes = decodeBase64Bytes(compact)
             ?: return decodeBase64Content(raw, filePath)
         return bytesToEditorText(bytes)
