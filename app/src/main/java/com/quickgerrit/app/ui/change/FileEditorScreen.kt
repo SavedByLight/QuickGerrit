@@ -1,16 +1,46 @@
 package com.quickgerrit.app.ui.change
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Publish
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,6 +55,7 @@ import com.quickgerrit.app.ui.theme.highlightSyntax
 import com.quickgerrit.app.ui.theme.languageFromPath
 import com.quickgerrit.app.ui.theme.rememberCodeColors
 import com.quickgerrit.app.ui.theme.rememberSyntaxColors
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
@@ -32,7 +63,7 @@ import kotlinx.coroutines.launch
  *
  * Flow:
  * 1. Load file content from the selected revision
- * 2. Edit in-app (BasicTextField, no external editor)
+ * 2. Edit in-app (BasicTextField + TextFieldState)
  * 3. Save → writes into the Gerrit *change edit*
  * 4. Publish → turns the change edit into a new patch set
  */
@@ -48,6 +79,7 @@ fun FileEditorScreen(
     onBack: () -> Unit,
     onPublished: () -> Unit = {}
 ) {
+    val textState = rememberTextFieldState()
     var content by remember { mutableStateOf("") }
     var original by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
@@ -57,6 +89,13 @@ fun FileEditorScreen(
     var status by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+
+    // Keep [content] in sync with the TextFieldState for dirty checks / save / highlight
+    LaunchedEffect(textState) {
+        snapshotFlow { textState.text.toString() }
+            .distinctUntilChanged()
+            .collect { content = it }
+    }
 
     val dirty = content != original
     val codeColors = rememberCodeColors()
@@ -77,6 +116,7 @@ fun FileEditorScreen(
                 project = project,
                 branch = branch
             )
+            textState.setTextAndPlaceCursorAtEnd(text)
             content = text
             original = text
             if (text.isEmpty()) {
@@ -94,9 +134,11 @@ fun FileEditorScreen(
             saving = true
             error = null
             status = null
+            val body = textState.text.toString()
             try {
-                repository.putEditFile(changeId, filePath, content)
-                original = content
+                repository.putEditFile(changeId, filePath, body)
+                content = body
+                original = body
                 status = "Saved to change edit"
                 snackbar.showSnackbar("Saved to change edit")
             } catch (e: Exception) {
@@ -110,12 +152,13 @@ fun FileEditorScreen(
 
     fun publish() {
         scope.launch {
-            // Auto-save if dirty
-            if (dirty) {
+            val body = textState.text.toString()
+            if (body != original) {
                 saving = true
                 try {
-                    repository.putEditFile(changeId, filePath, content)
-                    original = content
+                    repository.putEditFile(changeId, filePath, body)
+                    content = body
+                    original = body
                 } catch (e: Exception) {
                     error = e.message
                     saving = false
@@ -213,25 +256,24 @@ fun FileEditorScreen(
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         when {
                             loading -> "Loading…"
-                            dirty -> "Unsaved changes"
                             status != null -> status!!
+                            dirty -> "Unsaved changes"
                             else -> "In-app editor · Save writes a change edit"
                         },
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.weight(1f),
-                        color = if (dirty) MaterialTheme.colorScheme.tertiary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
                     )
-                    OutlinedButton(
+                    FilledTonalButton(
                         onClick = { save() },
-                        enabled = !loading && dirty && !saving && !publishing
+                        enabled = !loading && !saving && !publishing && dirty
                     ) { Text("Save") }
+                    Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = { publish() },
                         enabled = !loading && !saving && !publishing
@@ -254,9 +296,8 @@ fun FileEditorScreen(
                     }
                 }
                 else -> {
-                    // Highlighted monospace editor: coloured Text under transparent BasicTextField.
-                    // Do not put horizontalScroll on the outer box — infinite max width collapses
-                    // multi-line layout. Soft-wrap long lines; real \n still break lines.
+                    // Multi-line monospace editor. No horizontalScroll on the outer box —
+                    // unbounded width was collapsing multi-line layout into one visual line.
                     val vScroll = rememberScrollState()
                     val mono = TextStyle(
                         fontFamily = FontFamily.Monospace,
@@ -276,12 +317,11 @@ fun FileEditorScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                         BasicTextField(
-                            value = content,
-                            onValueChange = { content = it },
+                            state = textState,
                             modifier = Modifier.fillMaxWidth(),
                             textStyle = mono.copy(color = Color.Transparent),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            softWrap = true
+                            lineLimits = TextFieldLineLimits.MultiLine()
                         )
                     }
                 }
