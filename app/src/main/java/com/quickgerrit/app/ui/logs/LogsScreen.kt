@@ -1,7 +1,16 @@
 package com.quickgerrit.app.ui.logs
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -10,14 +19,32 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VerticalAlignBottom
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -26,7 +53,9 @@ import androidx.compose.ui.unit.sp
 import com.quickgerrit.app.util.AppLog
 import com.quickgerrit.app.util.LogEntry
 import com.quickgerrit.app.util.LogLevel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,8 +64,10 @@ fun LogsScreen(onBack: () -> Unit) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     var filter by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
+    var saving by remember { mutableStateOf(false) }
 
     val filtered = remember(entries, filter) {
         if (filter.isBlank()) entries
@@ -49,10 +80,26 @@ fun LogsScreen(onBack: () -> Unit) {
 
     LaunchedEffect(entries.size) {
         if (entries.isNotEmpty() && !listState.isScrollInProgress) {
-            // Auto-scroll to bottom when new logs arrive if user was near the end
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             if (lastVisible >= entries.size - 3) {
                 listState.animateScrollToItem(entries.size.coerceAtLeast(1) - 1)
+            }
+        }
+    }
+
+    fun saveFullLog() {
+        if (saving) return
+        scope.launch {
+            saving = true
+            try {
+                val path = withContext(Dispatchers.IO) {
+                    AppLog.saveFullLogToDownloads(context.applicationContext)
+                }
+                snackbarHostState.showSnackbar("Full log saved to $path")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.message ?: "Failed to save log")
+            } finally {
+                saving = false
             }
         }
     }
@@ -88,15 +135,22 @@ fun LogsScreen(onBack: () -> Unit) {
                         Icon(Icons.Default.VerticalAlignBottom, contentDescription = "Scroll to bottom")
                     }
                     IconButton(
+                        onClick = { saveFullLog() },
+                        enabled = !saving && entries.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = "Save full log to Downloads")
+                    }
+                    IconButton(
                         onClick = {
-                            val text = filtered.joinToString("\n") { formatEntry(it) }
+                            // Copy **full** buffer, not only the filtered view
+                            val text = AppLog.dumpFullText()
                             clipboard.setText(AnnotatedString(text))
                             scope.launch {
-                                snackbarHostState.showSnackbar("Logs copied to clipboard")
+                                snackbarHostState.showSnackbar("Full log copied to clipboard")
                             }
                         }
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = "Copy all")
+                        Icon(Icons.Default.Share, contentDescription = "Copy full log")
                     }
                     IconButton(onClick = { AppLog.clear() }) {
                         Icon(Icons.Default.Delete, contentDescription = "Clear logs")
@@ -216,15 +270,4 @@ private fun LogRow(entry: LogEntry) {
             )
         }
     }
-}
-
-private fun formatEntry(e: LogEntry): String = buildString {
-    append(e.timeFormatted)
-    append(" ")
-    append(e.level.name)
-    append("/")
-    append(e.tag)
-    append(": ")
-    append(e.message)
-    e.throwableMessage?.let { append(" | ").append(it) }
 }
