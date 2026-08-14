@@ -877,9 +877,14 @@ private fun ActionsSection(
     onReady: () -> Unit
 ) {
     var confirmMerge by remember { mutableStateOf(false) }
-    val canMerge = change.status.equals("NEW", ignoreCase = true) &&
-        change.workInProgress != true &&
-        (change.submittable == true || change.actions?.containsKey("submit") == true)
+    val isNew = change.status.equals("NEW", ignoreCase = true)
+    val isWip = change.workInProgress == true
+    // Gerrit allows Submit only when not WIP and (usually) submittable.
+    // Keep the button enabled for any non-WIP NEW change so the user can try;
+    // Gerrit will reject with a clear error if requirements are not met.
+    val mergeAllowedByServer =
+        change.submittable == true || change.actions?.containsKey("submit") == true
+    val canTryMerge = isNew && !isWip
 
     Column {
         Text("Actions", style = MaterialTheme.typography.titleMedium)
@@ -890,7 +895,7 @@ private fun ActionsSection(
         ) {
             when (change.status.uppercase()) {
                 "NEW" -> {
-                    if (change.workInProgress == true) {
+                    if (isWip) {
                         Button(onClick = onReady, enabled = !inProgress) {
                             Text("Mark Active")
                         }
@@ -902,10 +907,9 @@ private fun ActionsSection(
                     OutlinedButton(onClick = onAbandon, enabled = !inProgress) {
                         Text("Abandon")
                     }
-                    // Merge = Gerrit "submit" into the target branch
                     Button(
                         onClick = { confirmMerge = true },
-                        enabled = !inProgress && canMerge
+                        enabled = !inProgress && canTryMerge
                     ) {
                         Text("Merge")
                     }
@@ -924,15 +928,17 @@ private fun ActionsSection(
                 }
             }
         }
-        if (change.status.equals("NEW", ignoreCase = true) && !canMerge) {
+        if (isNew) {
             Spacer(Modifier.height(6.dp))
             Text(
                 when {
-                    change.workInProgress == true ->
-                        "Mark the change Active and satisfy Code-Review before merging."
-                    change.submittable != true ->
-                        "Not submittable yet — approvals (e.g. Code-Review +2) are still required."
-                    else -> "Merge is not available for this change."
+                    isWip ->
+                        "Mark Active before merging. You may also need Code-Review +2 (use Review below)."
+                    mergeAllowedByServer ->
+                        "Ready to merge into ${change.branch}."
+                    else ->
+                        "Not submittable yet — vote Code-Review +2 in Review below " +
+                            "(if permitted), then Merge. Gerrit still requires approvals."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -946,8 +952,17 @@ private fun ActionsSection(
             title = { Text("Merge change?") },
             text = {
                 Text(
-                    "Submit change ${change.number} into ${change.project} " +
-                        "(${change.branch})? This merges it on the Gerrit server."
+                    buildString {
+                        append("Submit change ${change.number} into ${change.project} (${change.branch})?")
+                        if (!mergeAllowedByServer) {
+                            append(
+                                "
+
+This change is not marked submittable yet " +
+                                    "(e.g. Code-Review still needed). Gerrit may reject the merge."
+                            )
+                        }
+                    }
                 )
             },
             confirmButton = {
