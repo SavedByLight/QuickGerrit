@@ -94,7 +94,7 @@ interface GerritApi {
         @Path("changeId", encoded = true) changeId: String,
         @Path("revisionId") revisionId: String,
         @Body input: ReviewInput
-    ): Any
+    ): Response<Unit>
 
     @POST("a/changes/{changeId}/abandon")
     suspend fun abandon(
@@ -119,14 +119,14 @@ interface GerritApi {
     suspend fun setWorkInProgress(
         @Path("changeId", encoded = true) changeId: String,
         @Body body: Map<String, String> = emptyMap()
-    ): Any
+    ): Response<Unit>
 
     /** Mark change as Ready for Review (active). */
     @POST("a/changes/{changeId}/ready")
     suspend fun setReadyForReview(
         @Path("changeId", encoded = true) changeId: String,
         @Body body: Map<String, String> = emptyMap()
-    ): Any
+    ): Response<Unit>
 
     // Projects
     @GET("a/projects/")

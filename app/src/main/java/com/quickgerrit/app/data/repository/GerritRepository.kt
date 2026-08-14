@@ -163,15 +163,17 @@ class GerritRepository(
         }
     }
 
-    suspend fun setReview(changeId: String, revisionId: String, input: ReviewInput): Any {
+    suspend fun setReview(changeId: String, revisionId: String, input: ReviewInput) {
         AppLog.i("setReview change=$changeId rev=$revisionId labels=${input.labels} message=${input.message?.take(40)}")
-        return try {
-            val result = api().setReview(changeId, revisionId, input)
+        try {
+            val resp = api().setReview(changeId, revisionId, input)
+            if (!resp.isSuccessful) {
+                throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
+            }
             AppLog.i("setReview succeeded")
-            result
         } catch (e: Exception) {
             AppLog.e("setReview failed", e)
-            throw e
+            throw Exception(httpErrorDetail(e), e)
         }
     }
 
@@ -272,31 +274,40 @@ class GerritRepository(
         return e.message ?: e.toString()
     }
 
-    suspend fun setWorkInProgress(changeId: String, message: String = ""): Any {
+    suspend fun setWorkInProgress(changeId: String, message: String = "") {
         AppLog.i("setWorkInProgress $changeId")
-        return try {
-            api().setWorkInProgress(
+        try {
+            val resp = api().setWorkInProgress(
                 changeId,
                 if (message.isBlank()) emptyMap() else mapOf("message" to message)
-            ).also { AppLog.i("setWorkInProgress succeeded") }
+            )
+            if (!resp.isSuccessful) {
+                throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
+            }
+            AppLog.i("setWorkInProgress succeeded")
         } catch (e: Exception) {
             AppLog.e("setWorkInProgress failed", e)
-            throw e
+            throw Exception(httpErrorDetail(e), e)
         }
     }
 
-    suspend fun setReadyForReview(changeId: String, message: String = ""): Any {
+    suspend fun setReadyForReview(changeId: String, message: String = "") {
         AppLog.i("setReadyForReview $changeId")
-        return try {
-            api().setReadyForReview(
+        try {
+            val resp = api().setReadyForReview(
                 changeId,
                 if (message.isBlank()) emptyMap() else mapOf("message" to message)
-            ).also { AppLog.i("setReadyForReview succeeded") }
+            )
+            if (!resp.isSuccessful) {
+                throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
+            }
+            AppLog.i("setReadyForReview succeeded")
         } catch (e: Exception) {
             AppLog.e("setReadyForReview failed", e)
-            throw e
+            throw Exception(httpErrorDetail(e), e)
         }
     }
+
 
     suspend fun listProjects(): Map<String, ProjectInfo> {
         AppLog.d("listProjects")
