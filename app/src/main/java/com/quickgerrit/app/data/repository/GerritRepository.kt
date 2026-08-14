@@ -656,8 +656,12 @@ class GerritRepository(
         return sb.toString()
     }
 
-    /** Write file content into the change edit (creates edit if needed). */
-    suspend fun putEditFile(changeId: String, filePath: String, content: String) {
+    /**
+     * Write file content into the change edit (creates edit if needed).
+     * @return true if Gerrit accepted a real change; false if content was identical
+     *         ("no changes were made") so no edit was opened.
+     */
+    suspend fun putEditFile(changeId: String, filePath: String, content: String): Boolean {
         val encoded = encodeGerritFileId(filePath)
         AppLog.i("putEditFile $changeId path=$filePath encoded=$encoded (${content.length} chars)")
         try {
@@ -665,18 +669,26 @@ class GerritRepository(
             val body = content.toRequestBody(mediaType)
             val resp = api().putEditFile(changeId, encoded, body)
             if (!resp.isSuccessful) {
-                throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
+                val err = resp.errorBody()?.string().orEmpty().trim()
+                // Gerrit: identical content → 409 "no changes were made"
+                if (resp.code() == 409 && err.contains("no changes were made", ignoreCase = true)) {
+                    AppLog.w("putEditFile: content identical to current revision ($err)")
+                    return false
+                }
+                throw Exception("HTTP ${resp.code()} $err".trim())
             }
             AppLog.i("putEditFile OK HTTP ${resp.code()}")
-            // Confirm Gerrit now has an open edit
             val open = hasEdit(changeId)
             AppLog.i("putEditFile hasEdit after save → $open")
-            if (!open) {
-                AppLog.w("putEditFile succeeded but hasEdit is still false")
-            }
+            return true
         } catch (e: Exception) {
+            val detail = httpErrorDetail(e)
+            if (detail.contains("no changes were made", ignoreCase = true)) {
+                AppLog.w("putEditFile: content identical ($detail)")
+                return false
+            }
             AppLog.e("putEditFile failed", e)
-            throw Exception(httpErrorDetail(e), e)
+            throw Exception(detail, e)
         }
     }
 

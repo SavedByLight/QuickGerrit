@@ -137,11 +137,16 @@ fun FileEditorScreen(
             // Always read from the live text field state
             val body = textState.text.toString()
             try {
-                repository.putEditFile(changeId, filePath, body)
+                val changed = repository.putEditFile(changeId, filePath, body)
                 content = body
                 original = body
-                status = "Saved to change edit (${body.length} chars)"
-                snackbar.showSnackbar("Saved to change edit")
+                if (changed) {
+                    status = "Saved to change edit (${body.length} chars)"
+                    snackbar.showSnackbar("Saved to change edit")
+                } else {
+                    status = "No changes — file already matches the current patch set"
+                    snackbar.showSnackbar("No changes were made — edit the file first")
+                }
             } catch (e: Exception) {
                 error = e.message
                 snackbar.showSnackbar(e.message ?: "Save failed")
@@ -159,10 +164,18 @@ fun FileEditorScreen(
             saving = true
             error = null
             try {
-                repository.putEditFile(changeId, filePath, body)
+                val changed = repository.putEditFile(changeId, filePath, body)
                 content = body
                 original = body
-                status = "Saved to change edit"
+                if (!changed) {
+                    // Content identical — only publish if some other edit is already open
+                    saving = false
+                    if (!repository.hasEdit(changeId)) {
+                        status = "No changes to publish — edit the file first"
+                        snackbar.showSnackbar("No changes to publish — edit the file first")
+                        return@launch
+                    }
+                }
             } catch (e: Exception) {
                 error = e.message
                 saving = false
