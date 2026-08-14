@@ -1,6 +1,7 @@
 package com.quickgerrit.app.data.api
 
 import com.quickgerrit.app.data.model.*
+import retrofit2.Response
 import retrofit2.http.*
 
 interface GerritApi {
@@ -160,7 +161,7 @@ interface GerritApi {
         @Path("changeId", encoded = true) changeId: String,
         @Path("revisionId") revisionId: String,
         @Path("fileId", encoded = true) fileId: String
-    ): okhttp3.ResponseBody
+    ): Response<okhttp3.ResponseBody>
 
     /**
      * Content of any file at the tip of a branch (not limited to files already in a change).
@@ -171,7 +172,7 @@ interface GerritApi {
         @Path("project", encoded = true) project: String,
         @Path("branch", encoded = true) branch: String,
         @Path("fileId", encoded = true) fileId: String
-    ): okhttp3.ResponseBody
+    ): Response<okhttp3.ResponseBody>
 
     /**
      * Put file content into the change edit (creates the edit if needed).

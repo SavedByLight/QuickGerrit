@@ -381,8 +381,8 @@ class GerritRepository(
         val encoded = encodeGerritFileId(filePath)
         AppLog.d("getBranchFileContent project=$project branch=$br path=$filePath")
         return try {
-            val body = api().getBranchFileContent(proj, br, encoded)
-            decodeBase64Content(body.string().trim(), filePath)
+            val resp = api().getBranchFileContent(proj, br, encoded)
+            parseFileContentResponse(resp, filePath)
         } catch (e: Exception) {
             AppLog.e("getBranchFileContent failed for $filePath", e)
             throw Exception(httpErrorDetail(e), e)
@@ -390,32 +390,89 @@ class GerritRepository(
     }
 
     /**
-     * Decode Gerrit file content to editable text.
-     * Gerrit returns base64 (sometimes with newlines or a data: URI prefix).
-     * Shell scripts and other text files must always open as text, never as "binary".
+     * Turn Gerrit file-content response into editable text.
+     *
+     * Gerrit *usually* sends base64 (header X-FYI-Content-Encoding: base64), but some
+     * proxies / versions return plain text. Android Base64.decode is lenient and will
+     * happily "decode" a shell script into binary garbage — so we only base64-decode
+     * when the payload looks like base64 and the decoded form is better text.
      */
     private fun decodeBase64Content(raw: String, filePath: String = ""): String {
-        var payload = raw.trim()
-        val dataUri = Regex("^data:[^;]*;base64,", RegexOption.IGNORE_CASE)
-        payload = payload.replace(dataUri, "")
-        val compact = payload.replace(Regex("\\s+"), "")
+        val trimmed = raw.trim().removePrefix("\uFEFF")
+        if (trimmed.isEmpty()) return ""
 
-        val bytes = decodeBase64Bytes(compact) ?: return raw
+        // data:text/plain;base64,....
+        val dataUriMatch = Regex("^data:([^;]*);base64,(.+)$", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .matchEntire(trimmed)
+        if (dataUriMatch != null) {
+            val b64 = dataUriMatch.groupValues[2]
+            return bytesToEditorText(decodeBase64Bytes(b64.replace(Regex("\\s+"), "")) ?: return trimmed)
+        }
 
+        val compact = trimmed.replace(Regex("\\s+"), "")
+        val looksBase64 = isProbablyBase64(compact)
+        val plainScore = textScore(trimmed)
+
+        if (looksBase64) {
+            val decodedBytes = decodeBase64Bytes(compact)
+            if (decodedBytes != null) {
+                val decoded = bytesToEditorText(decodedBytes)
+                val decodedScore = textScore(decoded)
+                // Prefer decoded when it is clearly better text than the raw payload
+                if (decodedScore >= plainScore && decodedScore >= 0.7) {
+                    return decoded
+                }
+                // Shebang / known text path: if decoded is still mostly text, use it
+                if (decoded.startsWith("#!") || (isLikelyTextPath(filePath) && decodedScore >= 0.5)) {
+                    return decoded
+                }
+            }
+        }
+
+        // Payload is already plain text (common for some servers) — do NOT base64-decode
+        if (plainScore >= 0.7 || trimmed.startsWith("#!") || isLikelyTextPath(filePath)) {
+            return trimmed.replace("\u0000", "")
+        }
+
+        // Last resort: try base64 anyway, else return as-is
+        val fallbackBytes = decodeBase64Bytes(compact)
+        if (fallbackBytes != null) {
+            val decoded = bytesToEditorText(fallbackBytes)
+            if (textScore(decoded) >= plainScore) return decoded
+        }
+        return trimmed.replace("\u0000", "")
+    }
+
+    private fun isProbablyBase64(compact: String): Boolean {
+        if (compact.length < 8) return false
+        // Base64 alphabet only; length typically multiple of 4 (padding)
+        if (!compact.matches(Regex("^[A-Za-z0-9+/=_-]+$"))) return false
+        // Reject strings that look like source code
+        if (compact.contains("#!/") || compact.contains("<?")) return false
+        return true
+    }
+
+    private fun textScore(s: String): Double {
+        if (s.isEmpty()) return 1.0
+        var good = 0
+        for (ch in s) {
+            val c = ch.code
+            if (ch == '\n' || ch == '\r' || ch == '\t' || c in 32..126 || c >= 160) good++
+        }
+        return good.toDouble() / s.length
+    }
+
+    private fun bytesToEditorText(bytes: ByteArray): String {
         val asUtf8 = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull()
         val replacementChar = '\uFFFD'
         val text = when {
             asUtf8 != null && !asUtf8.contains(replacementChar) -> asUtf8
             else -> String(bytes, Charsets.ISO_8859_1)
         }
-        val bom = '\uFEFF'
-        val noBom = if (text.startsWith(bom)) text.substring(1) else text
-        val cleaned = buildString(noBom.length) {
-            for (ch in noBom) {
-                if (ch != '\u0000') append(ch)
-            }
+        val noBom = if (text.startsWith('\uFEFF')) text.substring(1) else text
+        return buildString(noBom.length) {
+            for (ch in noBom) if (ch != '\u0000') append(ch)
         }
-        return cleaned
     }
 
     private fun decodeBase64Bytes(compact: String): ByteArray? {
@@ -434,17 +491,71 @@ class GerritRepository(
         return null
     }
 
+    private fun isLikelyTextPath(path: String): Boolean {
+        val name = path.substringAfterLast('/').lowercase()
+        val ext = name.substringAfterLast('.', missingDelimiterValue = "")
+        val textExts = setOf(
+            "sh", "bash", "zsh", "fish", "csh", "ksh", "bat", "cmd", "ps1",
+            "py", "pyw", "rb", "pl", "pm", "php", "js", "jsx", "ts", "tsx", "mjs", "cjs",
+            "java", "kt", "kts", "groovy", "gradle", "xml", "html", "htm", "css", "scss",
+            "json", "yaml", "yml", "toml", "ini", "cfg", "conf", "properties", "env",
+            "md", "txt", "csv", "tsv", "sql", "r", "go", "rs", "c", "h", "cc", "cpp", "hpp",
+            "m", "mm", "swift", "scala", "clj", "lua", "vim", "dockerfile", "makefile",
+            "cmake", "mk", "am", "ac", "in", "service", "timer", "socket", "desktop",
+            "gitignore", "gitattributes", "editorconfig", "rc", "profile"
+        )
+        if (ext in textExts) return true
+        return name in setOf(
+            "makefile", "dockerfile", "gemfile", "rakefile", "procfile",
+            "vagrantfile", "jenkinsfile", "brewfile", "readme", "license", "changelog",
+            "vendorsetup.sh", "vendorsetup"
+        )
+    }
+
     suspend fun getFileContent(changeId: String, revisionId: String, filePath: String): String {
         val encoded = encodeGerritFileId(filePath)
         AppLog.d("getFileContent $changeId/$revisionId path=$filePath")
         return try {
-            val body = api().getFileContent(changeId, revisionId, encoded)
-            decodeBase64Content(body.string().trim(), filePath)
+            val resp = api().getFileContent(changeId, revisionId, encoded)
+            parseFileContentResponse(resp, filePath)
         } catch (e: Exception) {
             AppLog.e("getFileContent failed for $filePath", e)
             throw Exception(httpErrorDetail(e), e)
         }
     }
+
+    private fun parseFileContentResponse(
+        resp: retrofit2.Response<okhttp3.ResponseBody>,
+        filePath: String
+    ): String {
+        if (!resp.isSuccessful) {
+            val err = resp.errorBody()?.string().orEmpty()
+            throw Exception("HTTP ${resp.code()} ${err.take(300)}")
+        }
+        val body = resp.body()?.string().orEmpty()
+        // Gerrit sets this when the body is base64 of the file bytes
+        val encoding = resp.headers()["X-FYI-Content-Encoding"]
+            ?: resp.headers()["x-fyi-content-encoding"]
+            ?: ""
+        AppLog.d("file content encoding='$encoding' path=$filePath bytes=${body.length}")
+        return if (encoding.equals("base64", ignoreCase = true)) {
+            forceDecodeBase64(body, filePath)
+        } else {
+            decodeBase64Content(body, filePath)
+        }
+    }
+
+    /** Unconditional base64 decode when Gerrit says the body is base64. */
+    private fun forceDecodeBase64(raw: String, filePath: String): String {
+        var payload = raw.trim()
+        val dataUri = Regex("^data:[^;]*;base64,", RegexOption.IGNORE_CASE)
+        payload = payload.replace(dataUri, "")
+        val compact = payload.replace(Regex("\s+"), "")
+        val bytes = decodeBase64Bytes(compact)
+            ?: return decodeBase64Content(raw, filePath)
+        return bytesToEditorText(bytes)
+    }
+
 
     /** Write file content into the change edit (creates edit if needed). */
     suspend fun putEditFile(changeId: String, filePath: String, content: String) {
