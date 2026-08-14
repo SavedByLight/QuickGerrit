@@ -956,9 +956,7 @@ private fun ActionsSection(
                         append("Submit change ${change.number} into ${change.project} (${change.branch})?")
                         if (!mergeAllowedByServer) {
                             append(
-                                "
-
-This change is not marked submittable yet " +
+                                "\n\nThis change is not marked submittable yet " +
                                     "(e.g. Code-Review still needed). Gerrit may reject the merge."
                             )
                         }
