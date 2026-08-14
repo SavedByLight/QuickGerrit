@@ -304,6 +304,41 @@ class GerritRepository(
         }
     }
 
+    suspend fun listBranches(project: String): List<BranchInfo> {
+        val proj = encodeGerritFileId(project.trim())
+        AppLog.d("listBranches project=$project encoded=$proj")
+        return try {
+            // Gerrit returns a JSON array of BranchInfo
+            api().listBranches(proj)
+                .sortedBy { it.shortName.lowercase() }
+                .also { AppLog.d("listBranches returned ${it.size} branches") }
+        } catch (e: Exception) {
+            AppLog.e("listBranches failed for $project", e)
+            throw e
+        }
+    }
+
+    /**
+     * Create a branch on [project].
+     * @param branch short name (no refs/heads/)
+     * @param revision base commit SHA, existing branch name, or "HEAD"
+     */
+    suspend fun createBranch(project: String, branch: String, revision: String): BranchInfo {
+        val proj = encodeGerritFileId(project.trim())
+        val short = branch.trim().removePrefix("refs/heads/")
+        val br = encodeGerritFileId(short)
+        val rev = revision.trim().ifBlank { "HEAD" }
+        AppLog.d("createBranch project=$project branch=$short revision=$rev")
+        return try {
+            api().createBranch(proj, br, BranchInput(revision = rev)).also {
+                AppLog.i("createBranch OK ${it.ref} @ ${it.revision}")
+            }
+        } catch (e: Exception) {
+            AppLog.e("createBranch failed for $project/$short", e)
+            throw e
+        }
+    }
+
     /**
      * Fetch file content as UTF-8 text.
      * Gerrit returns base64; we decode it. Binary files may produce garbage —
@@ -361,35 +396,25 @@ class GerritRepository(
      */
     private fun decodeBase64Content(raw: String, filePath: String = ""): String {
         var payload = raw.trim()
-        // Strip data-URI prefix if present: data:text/plain;base64,XXXX
         val dataUri = Regex("^data:[^;]*;base64,", RegexOption.IGNORE_CASE)
         payload = payload.replace(dataUri, "")
-        // Gerrit often wraps base64 across lines — remove all whitespace
         val compact = payload.replace(Regex("\\s+"), "")
 
         val bytes = decodeBase64Bytes(compact) ?: return raw
 
-        // Prefer UTF-8; fall back to ISO-8859-1 so Latin scripts/sh still edit cleanly
         val asUtf8 = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull()
         val replacementChar = '\uFFFD'
         val text = when {
             asUtf8 != null && !asUtf8.contains(replacementChar) -> asUtf8
             else -> String(bytes, Charsets.ISO_8859_1)
         }
-        // Strip UTF-8 BOM if present
         val bom = '\uFEFF'
         val noBom = if (text.startsWith(bom)) text.substring(1) else text
-        // Null bytes break Compose text fields; strip for editor safety
         val cleaned = buildString(noBom.length) {
             for (ch in noBom) {
                 if (ch != '\u0000') append(ch)
             }
         }
-
-        if (isLikelyTextPath(filePath) || isMostlyText(cleaned, bytes.size)) {
-            return cleaned
-        }
-        // Still return text so the user can view/edit; never block .sh etc.
         return cleaned
     }
 
@@ -404,44 +429,9 @@ class GerritRepository(
             try {
                 return android.util.Base64.decode(compact, flag)
             } catch (_: Exception) {
-                // try next
             }
         }
         return null
-    }
-
-    /** Extensions we always treat as editable text (including shell scripts). */
-    private fun isLikelyTextPath(path: String): Boolean {
-        val name = path.substringAfterLast('/').lowercase()
-        val ext = name.substringAfterLast('.', missingDelimiterValue = "")
-        val textExts = setOf(
-            "sh", "bash", "zsh", "fish", "csh", "ksh", "bat", "cmd", "ps1",
-            "py", "pyw", "rb", "pl", "pm", "php", "js", "jsx", "ts", "tsx", "mjs", "cjs",
-            "java", "kt", "kts", "groovy", "gradle", "xml", "html", "htm", "css", "scss",
-            "json", "yaml", "yml", "toml", "ini", "cfg", "conf", "properties", "env",
-            "md", "txt", "csv", "tsv", "sql", "r", "go", "rs", "c", "h", "cc", "cpp", "hpp",
-            "m", "mm", "swift", "scala", "clj", "lua", "vim", "dockerfile", "makefile",
-            "cmake", "mk", "am", "ac", "in", "service", "timer", "socket", "desktop",
-            "gitignore", "gitattributes", "editorconfig", "rc", "profile"
-        )
-        if (ext in textExts) return true
-        val base = name.substringAfterLast('/')
-        return base in setOf(
-            "makefile", "dockerfile", "gemfile", "rakefile", "procfile",
-            "vagrantfile", "jenkinsfile", "brewfile", "readme", "license", "changelog"
-        )
-    }
-
-    private fun isMostlyText(s: String, byteLen: Int): Boolean {
-        if (byteLen == 0 || s.isEmpty()) return true
-        var printable = 0
-        for (ch in s) {
-            val code = ch.code
-            if (ch == '\n' || ch == '\r' || ch == '\t' || code in 32..126 || code >= 160) {
-                printable++
-            }
-        }
-        return printable.toDouble() / s.length > 0.85
     }
 
     suspend fun getFileContent(changeId: String, revisionId: String, filePath: String): String {
