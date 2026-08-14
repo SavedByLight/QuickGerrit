@@ -543,7 +543,7 @@ class GerritRepository(
             isProbablyBase64(body.replace(Regex("\\s+"), "")) -> forceDecodeBase64(body)
             else -> decodeBase64Content(body, filePath)
         }
-        val normalized = normalizeNewlines(text)
+        val normalized = normalizeNewlines(maybeJsonUnescape(text))
         AppLog.d(
             "file content path=$filePath encoding='$encoding' " +
                 "raw=${body.length} text=${normalized.length} lines=${normalized.count { it == '\n' } + 1}"
@@ -569,6 +569,75 @@ class GerritRepository(
     }
 
 
+
+    /**
+     * Some responses deliver file text as a JSON-escaped string
+     * (literal \n, \t, \u003d, \") instead of real characters. Unescape those.
+     */
+    private fun maybeJsonUnescape(s: String): String {
+        val trimmed = s.trim()
+        if (trimmed.isEmpty()) return s
+
+        if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+            try {
+                return kotlinx.serialization.json.Json.decodeFromString<String>(trimmed)
+            } catch (_: Exception) {
+                return jsonUnescape(trimmed.substring(1, trimmed.length - 1))
+            }
+        }
+
+        val realNewlines = s.count { it == '\n' }
+        val hasEscapedNewline = s.contains("\\n")
+        val hasUnicodeEsc = s.contains("\\u")
+        if (realNewlines <= 1 && (hasEscapedNewline || hasUnicodeEsc || s.contains("\\t"))) {
+            return jsonUnescape(s)
+        }
+        return s
+    }
+
+    /** Unescape JSON string body (\n \t \r \" \\ \/ \uXXXX). */
+    private fun jsonUnescape(escaped: String): String {
+        val sb = StringBuilder(escaped.length)
+        var i = 0
+        while (i < escaped.length) {
+            val c = escaped[i]
+            if (c == '\\' && i + 1 < escaped.length) {
+                when (val n = escaped[i + 1]) {
+                    'n' -> { sb.append('\n'); i += 2 }
+                    't' -> { sb.append('\t'); i += 2 }
+                    'r' -> { sb.append('\r'); i += 2 }
+                    '"' -> { sb.append('"'); i += 2 }
+                    '\'' -> { sb.append('\''); i += 2 }
+                    '\\' -> { sb.append('\\'); i += 2 }
+                    '/' -> { sb.append('/'); i += 2 }
+                    'b' -> { sb.append('\b'); i += 2 }
+                    'f' -> { sb.append('\u000c'); i += 2 }
+                    'u' -> if (i + 5 < escaped.length) {
+                        val hex = escaped.substring(i + 2, i + 6)
+                        val cp = hex.toIntOrNull(16)
+                        if (cp != null) {
+                            sb.append(cp.toChar())
+                            i += 6
+                        } else {
+                            sb.append(c)
+                            i++
+                        }
+                    } else {
+                        sb.append(c)
+                        i++
+                    }
+                    else -> {
+                        sb.append(c)
+                        i++
+                    }
+                }
+            } else {
+                sb.append(c)
+                i++
+            }
+        }
+        return sb.toString()
+    }
 
     /** Write file content into the change edit (creates edit if needed). */
     suspend fun putEditFile(changeId: String, filePath: String, content: String) {
