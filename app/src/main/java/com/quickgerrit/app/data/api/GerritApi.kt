@@ -183,7 +183,7 @@ interface GerritApi {
         @Path("changeId", encoded = true) changeId: String,
         @Path("fileId", encoded = true) fileId: String,
         @Body body: okhttp3.RequestBody
-    ): okhttp3.ResponseBody?
+    ): Response<Unit>
 
     /**
      * Current change edit, if any.
@@ -205,13 +205,13 @@ interface GerritApi {
     suspend fun publishEdit(
         @Path("changeId", encoded = true) changeId: String,
         @Body body: Map<String, String> = emptyMap()
-    ): okhttp3.ResponseBody?
+    ): Response<Unit>
 
     /** Delete the current change edit. */
     @DELETE("a/changes/{changeId}/edit")
     suspend fun deleteEdit(
         @Path("changeId", encoded = true) changeId: String
-    ): okhttp3.ResponseBody?
+    ): Response<Unit>
 
     /** Set change topic. */
     @PUT("a/changes/{changeId}/topic")
@@ -225,5 +225,5 @@ interface GerritApi {
     suspend fun putEditMessage(
         @Path("changeId", encoded = true) changeId: String,
         @Body body: Map<String, String>
-    ): okhttp3.ResponseBody?
+    ): Response<Unit>
 }

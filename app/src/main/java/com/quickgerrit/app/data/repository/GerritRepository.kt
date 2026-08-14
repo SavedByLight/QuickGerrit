@@ -646,7 +646,10 @@ class GerritRepository(
         try {
             val mediaType = "text/plain; charset=UTF-8".toMediaType()
             val body = content.toRequestBody(mediaType)
-            api().putEditFile(changeId, encoded, body)
+            val resp = api().putEditFile(changeId, encoded, body)
+            if (!resp.isSuccessful) {
+                throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
+            }
             AppLog.i("putEditFile OK")
         } catch (e: Exception) {
             AppLog.e("putEditFile failed", e)
@@ -677,7 +680,11 @@ class GerritRepository(
                     "No open change edit to publish. Save a file or change the commit message first."
                 )
             }
-            api().publishEdit(changeId)
+            val resp = api().publishEdit(changeId)
+            // 204 No Content is success
+            if (!resp.isSuccessful) {
+                throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
+            }
             AppLog.i("publishEdit OK")
         } catch (e: Exception) {
             AppLog.e("publishEdit failed", e)
@@ -690,7 +697,10 @@ class GerritRepository(
     suspend fun deleteEdit(changeId: String) {
         AppLog.i("deleteEdit $changeId")
         try {
-            api().deleteEdit(changeId)
+            val resp = api().deleteEdit(changeId)
+            if (!resp.isSuccessful) {
+                throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
+            }
             AppLog.i("deleteEdit OK")
         } catch (e: Exception) {
             AppLog.e("deleteEdit failed", e)
@@ -718,8 +728,18 @@ class GerritRepository(
     suspend fun putEditMessage(changeId: String, message: String): Boolean {
         AppLog.i("putEditMessage $changeId")
         try {
-            api().putEditMessage(changeId, mapOf("message" to message))
-            AppLog.i("putEditMessage OK")
+            val resp = api().putEditMessage(changeId, mapOf("message" to message))
+            // 204 No Content = success (message applied / edit created)
+            if (!resp.isSuccessful) {
+                val err = resp.errorBody()?.string().orEmpty()
+                val detail = "HTTP ${resp.code()} $err"
+                if (err.contains("same as existing", ignoreCase = true)) {
+                    AppLog.w("putEditMessage: message unchanged ($detail)")
+                    return false
+                }
+                throw Exception(detail)
+            }
+            AppLog.i("putEditMessage OK (HTTP ${resp.code()})")
             return true
         } catch (e: Exception) {
             val detail = httpErrorDetail(e)
