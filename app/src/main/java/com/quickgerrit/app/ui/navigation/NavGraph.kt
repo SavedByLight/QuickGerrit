@@ -17,6 +17,8 @@ import com.quickgerrit.app.ui.change.DiffScreen
 import com.quickgerrit.app.ui.change.FileEditorScreen
 import com.quickgerrit.app.ui.changes.ChangesScreen
 import com.quickgerrit.app.ui.changes.ChangesViewModel
+import com.quickgerrit.app.ui.dashboard.DashboardScreen
+import com.quickgerrit.app.ui.dashboard.DashboardViewModel
 import com.quickgerrit.app.ui.logs.LogsScreen
 import com.quickgerrit.app.ui.projects.BranchesScreen
 import com.quickgerrit.app.ui.projects.BranchesViewModel
@@ -24,6 +26,7 @@ import com.quickgerrit.app.ui.projects.ProjectsScreen
 import com.quickgerrit.app.ui.projects.ProjectsViewModel
 
 sealed class Screen(val route: String) {
+    data object Dashboard : Screen("dashboard")
     data object Changes : Screen("changes")
     data object Projects : Screen("projects")
     data object Branches : Screen("branches/{project}") {
@@ -59,7 +62,18 @@ fun QuickGerritNavGraph() {
     val app = LocalContext.current.applicationContext as QuickGerritApp
     val repo = app.repository
 
-    NavHost(navController = navController, startDestination = Screen.Changes.route) {
+    NavHost(navController = navController, startDestination = Screen.Dashboard.route) {
+        composable(Screen.Dashboard.route) {
+            val vm: DashboardViewModel = viewModel(factory = DashboardViewModel.Factory(repo))
+            DashboardScreen(
+                viewModel = vm,
+                onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) },
+                onOpenAccounts = { navController.navigate(Screen.Accounts.route) },
+                onOpenChanges = { navController.navigate(Screen.Changes.route) },
+                onOpenProjects = { navController.navigate(Screen.Projects.route) },
+                onOpenLogs = { navController.navigate(Screen.Logs.route) }
+            )
+        }
         composable(Screen.Changes.route) {
             val vm: ChangesViewModel = viewModel(factory = ChangesViewModel.Factory(repo))
             ChangesScreen(
@@ -67,7 +81,10 @@ fun QuickGerritNavGraph() {
                 onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) },
                 onOpenAccounts = { navController.navigate(Screen.Accounts.route) },
                 onOpenProjects = { navController.navigate(Screen.Projects.route) },
-                onOpenLogs = { navController.navigate(Screen.Logs.route) }
+                onOpenLogs = { navController.navigate(Screen.Logs.route) },
+                onOpenDashboard = { navController.navigate(Screen.Dashboard.route) {
+                    popUpTo(Screen.Dashboard.route) { inclusive = true }
+                } }
             )
         }
         composable(Screen.Projects.route) {

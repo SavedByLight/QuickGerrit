@@ -25,7 +25,8 @@ fun ChangesScreen(
     onOpenChange: (String) -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenProjects: () -> Unit,
-    onOpenLogs: () -> Unit
+    onOpenLogs: () -> Unit,
+    onOpenDashboard: () -> Unit = {}
 ) {
     val state by viewModel.ui.collectAsState()
     var pendingUpdate by remember { mutableStateOf<AppUpdater.UpdateInfo?>(null) }
@@ -59,6 +60,9 @@ fun ChangesScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenDashboard) {
+                        Icon(Icons.Default.Dashboard, "Dashboard")
+                    }
                     IconButton(onClick = onOpenProjects) {
                         Icon(Icons.Default.Folder, "Projects")
                     }
@@ -339,7 +343,7 @@ private fun EmptyAccountsPrompt(onOpenAccounts: () -> Unit) {
 }
 
 @Composable
-private fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
+internal fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
     val codeColors = rememberCodeColors()
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -405,7 +409,7 @@ private fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
 }
 
 @Composable
-fun StatusChip(status: String) {
+internal fun StatusChip(status: String) {
     val (label, color) = when (status.uppercase()) {
         "NEW" -> "Open" to MaterialTheme.colorScheme.primary
         "MERGED" -> "Merged" to MaterialTheme.colorScheme.secondary

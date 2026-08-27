@@ -68,13 +68,18 @@ class GerritRepository(
             append("status:$status")
             if (queryExtra.isNotBlank()) append(" $queryExtra")
         }
-        AppLog.d("queryChanges q='$q' limit=$limit start=$start")
+        return queryChangesRaw(q, limit, start)
+    }
+
+    /** Arbitrary Gerrit change query (e.g. dashboard sections). */
+    suspend fun queryChangesRaw(query: String, limit: Int = 25, start: Int = 0): List<ChangeInfo> {
+        AppLog.d("queryChangesRaw q='$query' limit=$limit start=$start")
         return try {
-            val result = api().queryChanges(query = q, limit = limit, start = start)
-            AppLog.d("queryChanges returned ${result.size} changes")
+            val result = api().queryChanges(query = query, limit = limit, start = start)
+            AppLog.d("queryChangesRaw returned ${result.size} changes")
             result
         } catch (e: Exception) {
-            AppLog.e("queryChanges failed for q='$q'", e)
+            AppLog.e("queryChangesRaw failed for q='$query'", e)
             throw e
         }
     }
