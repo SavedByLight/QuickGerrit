@@ -134,40 +134,116 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            fakeroot rpm libfuse2 binutils || true
+            fakeroot rpm binutils wget file \
+            libfuse2t64 2>/dev/null \
+            || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            fakeroot rpm binutils wget file libfuse2 || true
+          # Real .AppImage builder (Compose TargetFormat.AppImage ≠ Linux AppImage)
+          curl -fsSL -o /tmp/appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            || curl -fsSL -o /tmp/appimagetool \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x /tmp/appimagetool
 
-      - name: Build Deb / Rpm / AppImage
+      - name: Build Deb and Rpm
         run: |
           V="${{ needs.version.outputs.version_name }}"
           REPO="${{ github.repository }}"
-          set +e
           ./gradlew :composeApp:packageDeb \
             -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
-          DEB_RC=$?
           ./gradlew :composeApp:packageRpm \
             -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
-          RPM_RC=$?
-          ./gradlew :composeApp:packageAppImage \
+
+      - name: Create Linux distributable (for AppImage)
+        run: |
+          V="${{ needs.version.outputs.version_name }}"
+          REPO="${{ github.repository }}"
+          # Unpacked JVM app tree used as AppImage payload
+          ./gradlew :composeApp:createDistributable \
             -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
-          AI_RC=$?
-          # Fallback single task if individual targets fail
-          if [ $DEB_RC -ne 0 ] || [ $RPM_RC -ne 0 ] || [ $AI_RC -ne 0 ]; then
-            ./gradlew :composeApp:packageDistributionForCurrentOS \
-              -PversionName="$V" -PgithubRepo="$REPO" --stacktrace || true
+
+      - name: Build real AppImage with appimagetool
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          V="${{ needs.version.outputs.version_name }}"
+          mkdir -p dist
+
+          APP_DIR=""
+          for cand in \
+            composeApp/build/compose/binaries/main/app/QuickGerrit \
+            composeApp/build/compose/binaries/main/appimage/QuickGerrit \
+            composeApp/build/compose/binaries/main/app/* \
+            composeApp/build/compose/binaries/main-release/app/QuickGerrit \
+            composeApp/build/compose/binaries/main-release/app/*
+          do
+            if [ -d "$cand" ] && { [ -d "$cand/bin" ] || [ -d "$cand/lib" ]; }; then
+              APP_DIR="$cand"
+              break
+            fi
+          done
+
+          if [ -z "$APP_DIR" ]; then
+            echo "Searching for app directory..."
+            APP_DIR=$(find composeApp/build/compose/binaries -type d -name "bin" 2>/dev/null | head -1 | xargs -r dirname)
           fi
-          set -e
-          echo "Exit codes: deb=$DEB_RC rpm=$RPM_RC appimage=$AI_RC"
+
+          echo "APP_DIR=$APP_DIR"
+          if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+            echo "::warning::No Compose app directory found — skipping AppImage"
+            find composeApp/build/compose -maxdepth 5 -type d 2>/dev/null | head -40 || true
+            exit 0
+          fi
+
+          WORK="${RUNNER_TEMP:-/tmp}/QuickGerrit.AppDir"
+          rm -rf "$WORK"
+          mkdir -p "$WORK/usr"
+          cp -a "$APP_DIR"/. "$WORK/usr/"
+
+          # Write AppRun without breaking YAML indentation (use printf, not unindented heredoc)
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'HERE="$(dirname "$(readlink -f "$0")")"' \
+            'if [ -d "$HERE/usr/bin" ]; then' \
+            '  for f in "$HERE/usr/bin"/*; do' \
+            '    [ -f "$f" ] && [ -x "$f" ] && exec "$f" "$@"' \
+            '  done' \
+            'fi' \
+            'BIN=$(find "$HERE/usr" -maxdepth 3 -type f -executable 2>/dev/null | head -1)' \
+            'exec "$BIN" "$@"' \
+            > "$WORK/AppRun"
+          chmod +x "$WORK/AppRun"
+
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Type=Application' \
+            'Name=QuickGerrit' \
+            'Comment=Gerrit Code Review client' \
+            'Exec=AppRun' \
+            'Icon=quickgerrit' \
+            'Categories=Development;' \
+            'Terminal=false' \
+            > "$WORK/quickgerrit.desktop"
+
+          # Minimal 1x1 PNG as icon placeholder
+          python3 -c "import pathlib; pathlib.Path('$WORK/quickgerrit.png').write_bytes(bytes.fromhex('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f80f00000101000518d84e0000000049454e44ae426082'))"
+
+          OUT="dist/QuickGerrit-${V}-x86_64.AppImage"
+          /tmp/appimagetool "$WORK" "$OUT" || /tmp/appimagetool --no-appstream "$WORK" "$OUT"
+          ls -la dist/ || true
+          if [ -f "$OUT" ]; then
+            echo "AppImage created: $OUT"
+            chmod +x "$OUT"
+          else
+            echo "::warning::appimagetool did not produce $OUT"
+          fi
 
       - name: Stage Linux packages
         run: |
           mkdir -p dist
-          find composeApp/build -type f \( \
-            -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \
-          \) -print -exec cp -v {} dist/ \; 2>/dev/null || true
+          find composeApp/build -type f \( -name "*.deb" -o -name "*.rpm" \) -print -exec cp -v {} dist/ \; 2>/dev/null || true
           echo "=== staged ==="
           ls -la dist/ || true
-          # Fail the job if nothing was produced so the release does not
-          # silently ship Android-only again
           if [ -z "$(ls -A dist 2>/dev/null)" ]; then
             echo "::error::No desktop Linux packages produced. Check composeApp packaging."
             find composeApp/build -type f 2>/dev/null | head -50 || true
