@@ -9,6 +9,7 @@ import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -29,7 +30,9 @@ data class ChangeDetailUiState(
     val repoFileQuery: String = "",
     val repoFileMatches: List<String> = emptyList(),
     val repoFileSearching: Boolean = false,
-    val repoFileSearchError: String? = null
+    val repoFileSearchError: String? = null,
+    /** Active account base URL for web links (e.g. https://gerrit.example.com). */
+    val baseUrl: String = ""
 )
 
 class ChangeDetailViewModel(
@@ -49,6 +52,9 @@ class ChangeDetailViewModel(
             AppLog.d("ChangeDetail load $changeId")
             _ui.update { it.copy(isLoading = true, error = null) }
             try {
+                val accountBase = runCatching {
+                    repo.activeAccount.first()?.baseUrl.orEmpty().trimEnd('/')
+                }.getOrDefault("")
                 // Detail first so the screen can render subject/status ASAP
                 val detail = repo.getChangeDetail(changeId)
                 val rev = detail.currentRevision ?: detail.revisions?.keys?.firstOrNull()
@@ -56,7 +62,8 @@ class ChangeDetailViewModel(
                     it.copy(
                         change = detail,
                         selectedRevision = rev,
-                        isLoading = false
+                        isLoading = false,
+                        baseUrl = accountBase
                     )
                 }
                 // Files + comments in parallel (independent endpoints)
@@ -221,6 +228,10 @@ class ChangeDetailViewModel(
 
     fun clearSnackbar() {
         _ui.update { it.copy(snackbar = null) }
+    }
+
+    fun showSnackbar(message: String) {
+        _ui.update { it.copy(snackbar = message) }
     }
 
     fun setRepoFileQuery(q: String) {

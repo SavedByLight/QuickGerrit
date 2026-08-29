@@ -83,7 +83,7 @@ fun ChangeDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item {
-                        HeaderSection(change)
+                        HeaderSection(change = change, baseUrl = state.baseUrl, onCopied = { viewModel.showSnackbar(it) })
                     }
                     item {
                         LabelsSection(change)
@@ -178,8 +178,34 @@ fun ChangeDetailScreen(
 }
 
 @Composable
-private fun HeaderSection(change: ChangeInfo) {
+private fun HeaderSection(
+    change: ChangeInfo,
+    baseUrl: String,
+    onCopied: (String) -> Unit = {}
+) {
     val codeColors = rememberCodeColors()
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    fun copy(label: String, value: String) {
+        if (value.isBlank()) return
+        clipboard.setText(androidx.compose.ui.text.AnnotatedString(value))
+        onCopied("Copied $label")
+    }
+
+    val webUrl = remember(baseUrl, change.project, change.number) {
+        buildChangeWebUrl(baseUrl, change.project, change.number)
+    }
+    val titleAndUrl = remember(change, webUrl) {
+        "${change.number}: ${change.subject}\n$webUrl"
+    }
+    val urlAndTitle = remember(change, webUrl) {
+        "$webUrl ${change.subject}"
+    }
+    val markdown = remember(change, webUrl) {
+        "[${change.number}: ${change.subject}]($webUrl)"
+    }
+    val changeIdValue = change.changeId.ifBlank { change.id }
+
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusChip(change.status)
@@ -200,6 +226,75 @@ private fun HeaderSection(change: ChangeInfo) {
             codeColors.insertionsDeletionsText(change.insertions, change.deletions),
             style = MaterialTheme.typography.labelMedium
         )
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Change details",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(4.dp))
+        CopyDetailRow("Change Number", change.number.toString()) {
+            copy("Change Number", change.number.toString())
+        }
+        CopyDetailRow("Change URL", webUrl.ifBlank { "—" }) {
+            copy("Change URL", webUrl)
+        }
+        CopyDetailRow("Title and URL", titleAndUrl) {
+            copy("Title and URL", titleAndUrl)
+        }
+        CopyDetailRow("URL and title", urlAndTitle) {
+            copy("URL and title", urlAndTitle)
+        }
+        CopyDetailRow("Markdown", markdown) {
+            copy("Markdown", markdown)
+        }
+        CopyDetailRow("Change-Id", changeIdValue.ifBlank { "—" }) {
+            copy("Change-Id", changeIdValue)
+        }
+    }
+}
+
+/** Gerrit polyGerrit-style change URL: {base}/c/{project}/+/{number} */
+private fun buildChangeWebUrl(baseUrl: String, project: String, number: Int): String {
+    val base = baseUrl.trim().trimEnd('/')
+    if (base.isEmpty() || number <= 0) return ""
+    val proj = project.trim().trimStart('/')
+    return "$base/c/$proj/+/$number"
+}
+
+@Composable
+private fun CopyDetailRow(
+    label: String,
+    value: String,
+    onCopy: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = if (label == "Change-Id") FontFamily.Monospace else FontFamily.Default,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        IconButton(
+            onClick = onCopy,
+            enabled = value.isNotBlank() && value != "—"
+        ) {
+            Icon(Icons.Default.ContentCopy, contentDescription = "Copy $label")
+        }
     }
 }
 
