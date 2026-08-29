@@ -13,9 +13,9 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /**
- * Checks GitHub Releases for a newer build.
- * On desktop, opens the release page / download URL in the browser.
- * On Android, the platform layer can still download+install an APK.
+ * Checks GitHub Releases for a newer build and notifies the user.
+ * Does **not** download or install updates inside the app — the user
+ * chooses "Download now" (opens browser) or "Later".
  */
 object AppUpdater {
 
@@ -26,7 +26,7 @@ object AppUpdater {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
         .build()
 
     @Serializable
@@ -50,11 +50,10 @@ object AppUpdater {
     data class UpdateInfo(
         val tag: String,
         val versionName: String,
-        val versionCode: Int?,
-        val downloadUrl: String,
-        val assetName: String,
         val releaseNotes: String?,
-        val htmlUrl: String?
+        val htmlUrl: String?,
+        /** Best matching asset download URL (optional; prefer htmlUrl for the release page). */
+        val downloadUrl: String?
     )
 
     fun isConfigured(): Boolean = AppConfig.GITHUB_REPO.isNotBlank()
@@ -63,12 +62,12 @@ object AppUpdater {
         val repo = AppConfig.GITHUB_REPO
         if (repo.isBlank()) {
             return@withContext Result.failure(
-                IllegalStateException("GITHUB_REPO is not set")
+                IllegalStateException("GITHUB_REPO is not set (pass -PgithubRepo=owner/name)")
             )
         }
         try {
             val url = "https://api.github.com/repos/$repo/releases/latest"
-            AppLog.d("AppUpdater: checking $url")
+            AppLog.d("AppUpdater: checking $url (local=${AppConfig.VERSION_NAME} code=${AppConfig.VERSION_CODE})")
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "application/vnd.github+json")
@@ -83,56 +82,82 @@ object AppUpdater {
             }
 
             val release = json.decodeFromString<GhRelease>(body)
-            if (release.draft) return@withContext Result.success(null)
-
-            val preferred = AppConfig.UPDATE_ASSET_NAME
-            val asset = release.assets.firstOrNull { it.name == preferred }
-                ?: release.assets.firstOrNull { it.name.endsWith(".apk", true) }
-                ?: release.assets.firstOrNull { it.name.endsWith(".msi", true) }
-                ?: release.assets.firstOrNull { it.name.endsWith(".deb", true) }
-                ?: release.assets.firstOrNull { it.name.endsWith(".AppImage", true) }
-                ?: release.assets.firstOrNull { it.name.endsWith(".rpm", true) }
-                ?: release.assets.firstOrNull()
-
-            if (asset == null) {
-                AppLog.w("AppUpdater: no downloadable asset on ${release.tagName}")
+            if (release.draft || release.prerelease) {
                 return@withContext Result.success(null)
             }
 
-            val remoteTag = release.tagName.removePrefix("v")
-            val local = AppConfig.VERSION_NAME
-            if (!isNewer(remoteTag, local)) {
-                AppLog.d("AppUpdater: up to date (local=$local remote=$remoteTag)")
-                return@withContext Result.success(null)
+            val remoteName = release.tagName.removePrefix("v").trim()
+            val localName = AppConfig.VERSION_NAME.removePrefix("v").removeSuffix("-debug").trim()
+            val remoteCode = parseVersionCode(remoteName)
+            val localCode = AppConfig.VERSION_CODE
+
+            val isNewer = when {
+                remoteCode != null && remoteCode > localCode -> true
+                remoteCode != null && remoteCode == localCode -> false
+                else -> isVersionNameNewer(remoteName, localName)
             }
 
-            val info = UpdateInfo(
-                tag = release.tagName,
-                versionName = remoteTag,
-                versionCode = remoteTag.substringAfterLast('.').toIntOrNull(),
-                downloadUrl = asset.browserDownloadUrl,
-                assetName = asset.name,
-                releaseNotes = release.body,
-                htmlUrl = release.htmlUrl
+            AppLog.i(
+                "AppUpdater: local=$localName($localCode) remote=$remoteName($remoteCode) newer=$isNewer"
             )
-            AppLog.i("AppUpdater: update available ${info.versionName} (${info.assetName})")
-            Result.success(info)
+
+            if (!isNewer) return@withContext Result.success(null)
+
+            // Prefer release page; asset URL is optional helper
+            val assetUrl = release.assets
+                .firstOrNull { it.name.contains("AppImage", true) }
+                ?.browserDownloadUrl
+                ?: release.assets.firstOrNull { it.name.endsWith(".msi", true) }?.browserDownloadUrl
+                ?: release.assets.firstOrNull { it.name.endsWith(".deb", true) }?.browserDownloadUrl
+                ?: release.assets.firstOrNull { it.name.endsWith(".apk", true) }?.browserDownloadUrl
+                ?: release.assets.firstOrNull()?.browserDownloadUrl
+
+            Result.success(
+                UpdateInfo(
+                    tag = release.tagName,
+                    versionName = remoteName,
+                    releaseNotes = release.body,
+                    htmlUrl = release.htmlUrl,
+                    downloadUrl = assetUrl
+                )
+            )
         } catch (t: Throwable) {
             AppLog.e("AppUpdater: check failed", t)
             Result.failure(t)
         }
     }
 
-    /** Open download or release page in the system browser / handler. */
-    fun openUpdate(info: UpdateInfo) {
-        val url = info.downloadUrl.ifBlank { info.htmlUrl.orEmpty() }
-        if (url.isNotBlank()) openUrl(url)
+    /** Open the GitHub release page (or asset URL) in the system browser. No in-app download. */
+    fun openDownloadPage(info: UpdateInfo) {
+        val url = info.htmlUrl?.takeIf { it.isNotBlank() }
+            ?: info.downloadUrl?.takeIf { it.isNotBlank() }
+            ?: return
+        AppLog.i("AppUpdater: opening $url")
+        openUrl(url)
     }
 
-    private fun isNewer(remote: String, local: String): Boolean {
-        fun parts(v: String) = v.trim().removePrefix("v")
-            .split('.', '-', '_')
-            .mapNotNull { it.filter { c -> c.isDigit() }.toIntOrNull() }
+    /** @deprecated Use [openDownloadPage] — kept for call-site compatibility. */
+    fun openUpdate(info: UpdateInfo) = openDownloadPage(info)
+
+    private fun parseVersionCode(versionName: String): Int? {
+        // "1.0.70" -> 70, "1.0.70-debug" -> 70
+        val cleaned = versionName.removePrefix("v").substringBefore('-')
+        val parts = cleaned.split('.')
+        return when {
+            parts.size >= 3 -> parts[2].filter { it.isDigit() }.toIntOrNull()
+            parts.size == 2 -> {
+                val major = parts[0].toIntOrNull() ?: return null
+                val minor = parts[1].toIntOrNull() ?: return null
+                major * 100 + minor
+            }
+            else -> cleaned.filter { it.isDigit() }.toIntOrNull()
+        }
+    }
+
+    private fun isVersionNameNewer(remote: String, local: String): Boolean {
+        fun parts(v: String) = v.trim().removePrefix("v").substringBefore('-')
+            .split('.')
+            .map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
         val r = parts(remote)
         val l = parts(local)
         val n = maxOf(r.size, l.size)

@@ -2,6 +2,7 @@ package com.quickgerrit.app.ui.changes
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+// Arrangement via layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -89,30 +90,30 @@ fun ChangesScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .clickable {
-                            // Navigate user to Accounts → Check for updates for full flow
-                            onOpenAccounts()
-                        }
                 ) {
-                    Row(
-                        Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.SystemUpdate, null)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "Update available: v${info.versionName}",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                "Tap to open Accounts and install",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                    Column(Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.SystemUpdate, null)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Update available: v${info.versionName}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "You have ${com.quickgerrit.app.platform.AppConfig.VERSION_NAME}. Opens GitHub in your browser — nothing is downloaded inside the app.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
-                        IconButton(onClick = { pendingUpdate = null }) {
-                            Icon(Icons.Default.Close, "Dismiss")
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = {
+                                AppUpdater.openDownloadPage(info)
+                                pendingUpdate = null
+                            }) { Text("Download now") }
+                            TextButton(onClick = { pendingUpdate = null }) { Text("Later") }
                         }
                     }
                 }

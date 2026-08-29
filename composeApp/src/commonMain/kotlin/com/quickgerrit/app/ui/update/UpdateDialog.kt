@@ -33,6 +33,10 @@ import com.quickgerrit.app.platform.AppConfig
 import com.quickgerrit.app.update.AppUpdater
 import kotlinx.coroutines.launch
 
+/**
+ * Manual "Check for updates" dialog — never downloads inside the app.
+ * User can open the release page or dismiss.
+ */
 @Composable
 fun UpdateDialog(
     onDismiss: () -> Unit,
@@ -85,6 +89,12 @@ fun UpdateDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                Text(
+                    "Installed: ${AppConfig.VERSION_NAME} (${AppConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
                 when {
                     checking -> {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -94,11 +104,11 @@ fun UpdateDialog(
                     error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
                     update != null -> {
                         val info = update!!
-                        Text("Version ${info.versionName} is available (you have ${AppConfig.VERSION_NAME}).")
+                        Text("Version ${info.versionName} is available.")
                         Spacer(Modifier.height(8.dp))
                         info.releaseNotes?.takeIf { it.isNotBlank() }?.let {
                             Text("Release notes:", style = MaterialTheme.typography.labelLarge)
-                            Text(it.take(1500), style = MaterialTheme.typography.bodySmall)
+                            Text(it.take(1200), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     status != null -> Text(status!!)
@@ -110,21 +120,23 @@ fun UpdateDialog(
             val info = update
             if (info != null) {
                 TextButton(onClick = {
-                    AppUpdater.openUpdate(info)
+                    AppUpdater.openDownloadPage(info)
                     onDismiss()
-                }) { Text("Download") }
+                }) { Text("Download now") }
             } else if (!checking) {
                 TextButton(onClick = { runCheck() }) { Text("Check") }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) {
+                Text(if (update != null) "Later" else "Close")
+            }
         }
     )
 }
 
 /**
- * Button used on the Accounts screen to manually check for updates.
+ * Button on Accounts screen — check only; no in-app download.
  */
 @Composable
 fun UpdateCheckButton(
@@ -184,6 +196,12 @@ fun UpdateCheckButton(
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
+        Text(
+            "App ${AppConfig.VERSION_NAME} (${AppConfig.VERSION_CODE})",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp)
+        )
     }
 
     val info = update
@@ -193,36 +211,37 @@ fun UpdateCheckButton(
             title = { Text("Update available") },
             text = {
                 Column {
-                    Text("Version ${info.versionName} is available (you have ${AppConfig.VERSION_NAME}).")
+                    Text(
+                        "Version ${info.versionName} is available.\nYou have ${AppConfig.VERSION_NAME}."
+                    )
                     Spacer(Modifier.height(8.dp))
                     info.releaseNotes?.takeIf { it.isNotBlank() }?.let {
-                        Text(it.take(1000), style = MaterialTheme.typography.bodySmall)
+                        Text(it.take(800), style = MaterialTheme.typography.bodySmall)
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Download opens the GitHub release page in your browser. Nothing is downloaded inside the app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    AppUpdater.openUpdate(info)
+                    AppUpdater.openDownloadPage(info)
                     showDialog = false
-                }) { Text("Download") }
+                }) { Text("Download now") }
             },
             dismissButton = {
-                Row {
-                    info.htmlUrl?.let { url ->
-                        TextButton(onClick = {
-                            com.quickgerrit.app.platform.openUrl(url)
-                        }) { Text("View on GitHub") }
-                    }
-                    TextButton(onClick = { showDialog = false }) { Text("Later") }
-                }
+                TextButton(onClick = { showDialog = false }) { Text("Later") }
             }
         )
     }
 }
 
 /**
- * Silently checks for updates once per process (e.g. from main screen).
- * Calls [onUpdateAvailable] when a newer release exists.
+ * Silent check once per process. Shows nothing itself —
+ * caller can present a snackbar/dialog with Download now / Later.
  */
 @Composable
 fun AutoUpdateChecker(
