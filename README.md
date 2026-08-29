@@ -1,6 +1,12 @@
 # QuickGerrit
 
-A modern **Kotlin + Jetpack Compose** Android client for [Gerrit Code Review](https://www.gerritcodereview.com/).
+A modern **Kotlin + Jetpack Compose / Compose Multiplatform** client for [Gerrit Code Review](https://www.gerritcodereview.com/).
+
+## Platforms
+
+- **Android** (original) – minSdk 26
+- **Desktop** (new) – Windows, Linux, macOS
+  - Native packages: **MSI** (Windows), **DEB** / **RPM** / **AppImage** (Linux), DMG (macOS)
 
 ## Features
 
@@ -20,70 +26,49 @@ A modern **Kotlin + Jetpack Compose** Android client for [Gerrit Code Review](ht
 
 ## How to run
 
-1. Open the `QuickGerrit` folder in **Android Studio** (Hedgehog / Iguana / newer).
-2. Let Gradle sync (it will download dependencies).
-3. Run on an emulator or device (minSdk 26).
+### Android
 
-### Adding an account
+1. Open the project in **Android Studio**.
+2. Run the `:app` or `:composeApp` Android target.
 
-1. Open Gerrit in a browser → **Settings** → **HTTP Password** → generate one.
-2. In the app tap the account icon → **Add Account**.
-3. Enter:
-   - Display name
-   - Base URL (e.g. `https://gerrit.example.com` or `https://android-review.googlesource.com`)
-   - Username
-   - The HTTP password (not your login password)
+### Desktop
 
-The app authenticates with HTTP Basic on `/a/...` endpoints and strips Gerrit’s `)]}'` XSSI prefix.
+```bash
+./gradlew :composeApp:run
+```
+
+### Build desktop packages
+
+```bash
+# All formats (on Linux host for Deb/Rpm/AppImage; Windows host for MSI)
+./gradlew :composeApp:packageDistributionForCurrentOS
+
+# Or specific:
+./gradlew :composeApp:packageDeb
+./gradlew :composeApp:packageRpm
+./gradlew :composeApp:packageAppImage
+./gradlew :composeApp:packageMsi   # requires Windows
+```
+
+Packages appear under `composeApp/build/compose/binaries/main/`.
+
+## Architecture (multiplatform)
+
+```
+composeApp/
+  src/
+    commonMain/   Shared UI + data (Gerrit API, models, repository, screens)
+    androidMain/  Android entry + platform actuals (DataStore, etc.)
+    desktopMain/  Desktop entry (Window) + JVM actuals
+app/              Original pure-Android module (kept for compatibility)
+```
 
 ## CI / GitHub Releases
 
-Every push to `main`/`master` (and manual **workflow_dispatch**) builds **one** APK and publishes a GitHub Release:
+Builds APK (Android) and desktop packages (Deb, Rpm, AppImage, MSI when runners allow) and publishes releases.
 
-| Asset | Description |
-|-------|-------------|
-| `QuickGerrit-debug.apk` | App build (stable name for in-app updates) |
-
-The release body includes the **last commit** (subject + message) so the in-app updater can show what changed.
-
-Version scheme: `1.0.<github.run_number>` (also used as `versionCode`).
-
-### Secrets (optional, for signed builds)
-
-| Secret | Purpose |
-|--------|---------|
-| `KEYSTORE_BASE64` | Base64-encoded PKCS12/JKS keystore |
-| `KEYSTORE_PASSWORD` | Keystore password |
-| `KEY_ALIAS` | Key alias |
-| `KEY_PASSWORD` | Key password |
-
-Without these, the committed `app/ci.keystore` is used so every CI build shares the same signing cert.
-
-### In-app updates
-
-The app checks `https://api.github.com/repos/<owner>/<repo>/releases/latest` on launch and from **Accounts → Check for updates**.  
-`GITHUB_REPO` is injected by CI via `-PgithubRepo=${{ github.repository }}` into `BuildConfig`.  
-Installing an update requires allowing “Install unknown apps” for QuickGerrit (Android 8+).
-
-## Architecture
-
-```
-ui/          Compose screens + ViewModels (UDF / StateFlow)
-data/
-  api/       Retrofit GerritApi + OkHttp (auth + XSSI interceptor)
-  model/     kotlinx.serialization DTOs
-  local/     DataStore multi-account store
-  repository/ GerritRepository
-update/      GitHub Releases auto-updater
-```
-
-## Notes
-
-- CORS is not an issue (native app).
-- Some Gerrit instances require the account to have generated an HTTP password.
-- Diff viewer is text-based (no syntax highlighting yet); easy to extend with a library later.
-- Review labels are hard-coded to the common Code-Review / Verified pair; the detail screen shows whatever labels the server returns.
+Version scheme: `1.0.<github.run_number>`.
 
 ## License
 
-Apache-2.0 (same spirit as Gerrit clients).
+Apache-2.0

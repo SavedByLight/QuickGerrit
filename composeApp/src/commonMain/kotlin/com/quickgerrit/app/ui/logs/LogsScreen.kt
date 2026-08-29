@@ -1,0 +1,273 @@
+package com.quickgerrit.app.ui.logs
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.quickgerrit.app.util.AppLog
+import com.quickgerrit.app.util.LogEntry
+import com.quickgerrit.app.util.LogLevel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LogsScreen(onBack: () -> Unit) {
+    val entries by AppLog.entries.collectAsState()
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    var filter by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
+    var saving by remember { mutableStateOf(false) }
+
+    val filtered = remember(entries, filter) {
+        if (filter.isBlank()) entries
+        else entries.filter {
+            it.message.contains(filter, ignoreCase = true) ||
+                it.tag.contains(filter, ignoreCase = true) ||
+                (it.throwableMessage?.contains(filter, ignoreCase = true) == true)
+        }
+    }
+
+    LaunchedEffect(entries.size) {
+        if (entries.isNotEmpty() && !listState.isScrollInProgress) {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            if (lastVisible >= entries.size - 3) {
+                listState.animateScrollToItem(entries.size.coerceAtLeast(1) - 1)
+            }
+        }
+    }
+
+    fun saveFullLog() {
+        if (saving) return
+        scope.launch {
+            saving = true
+            try {
+                val path = withContext(Dispatchers.IO) {
+                    AppLog.saveFullLogToDownloads(context.applicationContext)
+                }
+                snackbarHostState.showSnackbar("Full log saved to $path")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar(e.message ?: "Failed to save log")
+            } finally {
+                saving = false
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Logs")
+                        Text(
+                            "${filtered.size}${if (filter.isNotBlank()) " / ${entries.size}" else ""} entries",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                if (filtered.isNotEmpty()) {
+                                    listState.animateScrollToItem(filtered.size - 1)
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.VerticalAlignBottom, contentDescription = "Scroll to bottom")
+                    }
+                    IconButton(
+                        onClick = { saveFullLog() },
+                        enabled = !saving && entries.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = "Save full log to Downloads")
+                    }
+                    IconButton(
+                        onClick = {
+                            // Copy **full** buffer, not only the filtered view
+                            val text = AppLog.dumpFullText()
+                            clipboard.setText(AnnotatedString(text))
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Full log copied to clipboard")
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Copy full log")
+                    }
+                    IconButton(onClick = { AppLog.clear() }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Clear logs")
+                    }
+                }
+            )
+        },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
+        }
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            OutlinedTextField(
+                value = filter,
+                onValueChange = { filter = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                placeholder = { Text("Filter…") },
+                singleLine = true,
+                trailingIcon = {
+                    if (filter.isNotEmpty()) {
+                        IconButton(onClick = { filter = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear filter")
+                        }
+                    }
+                }
+            )
+
+            if (filtered.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (entries.isEmpty()) "No logs yet" else "No matches",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                SelectionContainer {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        items(filtered, key = { "${it.timeMillis}-${it.message.hashCode()}" }) { entry ->
+                            LogRow(entry)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogRow(entry: LogEntry) {
+    val levelColor = when (entry.level) {
+        LogLevel.V -> Color(0xFF9E9E9E)
+        LogLevel.D -> Color(0xFF2196F3)
+        LogLevel.I -> Color(0xFF4CAF50)
+        LogLevel.W -> Color(0xFFFF9800)
+        LogLevel.E -> Color(0xFFF44336)
+    }
+    val bg = when (entry.level) {
+        LogLevel.E -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+        LogLevel.W -> Color(0xFFFF9800).copy(alpha = 0.12f)
+        else -> Color.Transparent
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(bg)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                entry.level.name,
+                color = levelColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.width(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                entry.timeFormatted,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp
+            )
+            if (entry.tag != "QuickGerrit") {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    entry.tag.removePrefix("QuickGerrit."),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 10.sp
+                )
+            }
+        }
+        Text(
+            entry.message,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 16.sp
+        )
+        entry.throwableMessage?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
