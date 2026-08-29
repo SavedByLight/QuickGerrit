@@ -133,44 +133,34 @@ jobs:
       - name: Install packaging tools
         run: |
           sudo apt-get update -qq
-          # Ubuntu 22.04: libfuse2 — Ubuntu 24.04: libfuse2t64
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            fakeroot rpm binutils wget file libfuse2t64 2>/dev/null \
+            fakeroot rpm binutils wget file \
+            libfuse2t64 2>/dev/null \
             || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             fakeroot rpm binutils wget file libfuse2 || true
-          sudo modprobe fuse 2>/dev/null || true
-          # appimagetool for a real portable .AppImage (Compose TargetFormat.AppImage
-          # is jpackage "app-image" = a directory, not a Linux AppImage file)
+          # Real .AppImage builder (Compose TargetFormat.AppImage ≠ Linux AppImage)
           curl -fsSL -o /tmp/appimagetool \
             "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
             || curl -fsSL -o /tmp/appimagetool \
             "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x /tmp/appimagetool
-          # On CI without FUSE, extract-and-run
-          export APPIMAGE_EXTRACT_AND_RUN=1
 
-      - name: Build Deb / Rpm + Linux app image
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
+      - name: Build Deb and Rpm
         run: |
           V="${{ needs.version.outputs.version_name }}"
           REPO="${{ github.repository }}"
-          set +e
           ./gradlew :composeApp:packageDeb \
             -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
-          DEB_RC=$?
           ./gradlew :composeApp:packageRpm \
             -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
-          RPM_RC=$?
-          # Prefer unpacked app dir (jpackage app-image) — used to build real AppImage
+
+      - name: Create Linux distributable (for AppImage)
+        run: |
+          V="${{ needs.version.outputs.version_name }}"
+          REPO="${{ github.repository }}"
+          # Unpacked JVM app tree used as AppImage payload
           ./gradlew :composeApp:createDistributable \
             -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
-          DIST_RC=$?
-          # Also try packageAppImage (Compose name for jpackage app-image dir)
-          ./gradlew :composeApp:packageAppImage \
-            -PversionName="$V" -PgithubRepo="$REPO" --stacktrace || true
-          set -e
-          echo "Exit codes: deb=$DEB_RC rpm=$RPM_RC distributable=$DIST_RC"
 
       - name: Build real AppImage with appimagetool
         env:
@@ -179,7 +169,6 @@ jobs:
           V="${{ needs.version.outputs.version_name }}"
           mkdir -p dist
 
-          # Locate jpackage/Compose app directory (contains bin/QuickGerrit or similar)
           APP_DIR=""
           for cand in \
             composeApp/build/compose/binaries/main/app/QuickGerrit \
@@ -206,52 +195,38 @@ jobs:
             exit 0
           fi
 
-          # Stage AppDir structure for appimagetool
-          WORK="$RUNNER_TEMP/QuickGerrit.AppDir"
+          WORK="${RUNNER_TEMP:-/tmp}/QuickGerrit.AppDir"
           rm -rf "$WORK"
           mkdir -p "$WORK/usr"
-          # Copy full JVM app image under usr/
           cp -a "$APP_DIR"/. "$WORK/usr/"
 
-          # Find launcher script
-          LAUNCHER=$(find "$WORK/usr/bin" -type f 2>/dev/null | head -1)
-          if [ -z "$LAUNCHER" ]; then
-            LAUNCHER=$(find "$WORK/usr" -type f -executable 2>/dev/null | head -1)
-          fi
-          echo "LAUNCHER=$LAUNCHER"
-          REL_LAUNCHER=$(echo "$LAUNCHER" | sed "s|^$WORK/||")
-
-          cat > "$WORK/AppRun" << 'APPRUN'
-#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-# Prefer bin/* launcher from jpackage image
-if [ -d "$HERE/usr/bin" ]; then
-  for f in "$HERE/usr/bin"/*; do
-    [ -f "$f" ] && [ -x "$f" ] && exec "$f" "$@"
-  done
-fi
-exec find "$HERE/usr" -maxdepth 3 -type f -executable | head -1 | xargs -I{} {} "$@"
-APPRUN
+          # Write AppRun without breaking YAML indentation (use printf, not unindented heredoc)
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'HERE="$(dirname "$(readlink -f "$0")")"' \
+            'if [ -d "$HERE/usr/bin" ]; then' \
+            '  for f in "$HERE/usr/bin"/*; do' \
+            '    [ -f "$f" ] && [ -x "$f" ] && exec "$f" "$@"' \
+            '  done' \
+            'fi' \
+            'BIN=$(find "$HERE/usr" -maxdepth 3 -type f -executable 2>/dev/null | head -1)' \
+            'exec "$BIN" "$@"' \
+            > "$WORK/AppRun"
           chmod +x "$WORK/AppRun"
 
-          # Desktop entry
-          cat > "$WORK/quickgerrit.desktop" << DESKTOP
-[Desktop Entry]
-Type=Application
-Name=QuickGerrit
-Comment=Gerrit Code Review client
-Exec=AppRun
-Icon=quickgerrit
-Categories=Development;
-Terminal=false
-DESKTOP
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Type=Application' \
+            'Name=QuickGerrit' \
+            'Comment=Gerrit Code Review client' \
+            'Exec=AppRun' \
+            'Icon=quickgerrit' \
+            'Categories=Development;' \
+            'Terminal=false' \
+            > "$WORK/quickgerrit.desktop"
 
-          # Minimal icon placeholder (1x1 PNG) if none present
-          if [ ! -f "$WORK/quickgerrit.png" ]; then
-            # valid minimal 1x1 PNG
-            printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82' > "$WORK/quickgerrit.png" || \
-            touch "$WORK/quickgerrit.png"
-          fi
+          # Minimal 1x1 PNG as icon placeholder
+          python3 -c "import pathlib; pathlib.Path('$WORK/quickgerrit.png').write_bytes(bytes.fromhex('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63f80f00000101000518d84e0000000049454e44ae426082'))"
 
           OUT="dist/QuickGerrit-${V}-x86_64.AppImage"
           /tmp/appimagetool "$WORK" "$OUT" || /tmp/appimagetool --no-appstream "$WORK" "$OUT"
@@ -266,10 +241,7 @@ DESKTOP
       - name: Stage Linux packages
         run: |
           mkdir -p dist
-          find composeApp/build -type f \( \
-            -name "*.deb" -o -name "*.rpm" \
-          \) -print -exec cp -v {} dist/ \; 2>/dev/null || true
-          # AppImage already written to dist/ by previous step
+          find composeApp/build -type f \( -name "*.deb" -o -name "*.rpm" \) -print -exec cp -v {} dist/ \; 2>/dev/null || true
           echo "=== staged ==="
           ls -la dist/ || true
           if [ -z "$(ls -A dist 2>/dev/null)" ]; then
