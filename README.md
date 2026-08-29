@@ -1,27 +1,40 @@
-# Multiplatform compile fix for QuickGerrit composeApp
+# Fix: version 0.0.0 and GitHub updates
 
-Copy the `composeApp/` tree from this package **over** your existing `composeApp/` module
-(merge/replace files). This makes `commonMain` compile on both Android and Desktop JVM.
+## Cause
+1. `GeneratedVersion.kt` stayed at 0.0.0 / empty repo because Gradle never regenerated it.
+2. Empty `GITHUB_REPO` → update check is disabled.
 
-## What changed
+## Fix
+Replace **entire** `composeApp/build.gradle.kts` with the one in this zip.
+It always runs `generateDesktopVersion` before desktop compile/package.
 
-- `AppConfig` expect/actual (replaces `BuildConfig`)
-- `PlatformViewModel` (replaces AndroidX ViewModel / viewModelScope)
-- Multiplatform `AccountStore` (JSON file prefs)
-- Multiplatform `AppLog` + platform log sinks
-- Multiplatform `AppUpdater` (opens browser on desktop)
-- State-based `NavGraph` (no Navigation Compose)
-- Theme without Android dynamic color
-- Android Manifest + MainActivity / QuickGerritApp
-- Desktop `Main.kt` entry
-
-## After applying
-
+## Build (local)
 ```bash
-./gradlew :composeApp:compileKotlinDesktop
-./gradlew :composeApp:packageDeb :composeApp:packageRpm :composeApp:packageAppImage
-# on Windows:
-./gradlew :composeApp:packageMsi
+./gradlew :composeApp:run \
+  -PversionName=1.0.70 \
+  -PversionCode=70 \
+  -PgithubRepo=YOUR_GITHUB_USER/QuickGerrit
 ```
 
-Desktop packages appear under `composeApp/build/compose/binaries/`.
+## Build (same as CI)
+```bash
+./gradlew :composeApp:packageDeb \
+  -PversionName=1.0.70 \
+  -PversionCode=70 \
+  -PgithubRepo=${GITHUB_REPOSITORY}
+```
+
+After a successful build you should see in the log:
+```
+GeneratedVersion → VERSION_NAME=1.0.70 VERSION_CODE=70 GITHUB_REPO=you/QuickGerrit
+```
+
+And in the app: **App 1.0.70 (70)** not 0.0.0.
+
+## Optional
+Add to root `gradle.properties`:
+```
+versionName=1.0.70
+versionCode=70
+githubRepo=YourUser/QuickGerrit
+```
