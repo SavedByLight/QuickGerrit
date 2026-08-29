@@ -1,10 +1,8 @@
 package com.quickgerrit.app.ui.change
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.*
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.platform.PlatformViewModel
 import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,7 +33,7 @@ data class ChangeDetailUiState(
 class ChangeDetailViewModel(
     private val repo: GerritRepository,
     private val changeId: String
-) : ViewModel() {
+) : PlatformViewModel() {
 
     private val _ui = MutableStateFlow(ChangeDetailUiState())
     val ui: StateFlow<ChangeDetailUiState> = _ui.asStateFlow()
@@ -332,14 +330,5 @@ class ChangeDetailViewModel(
                 }
             }
         }
-    }
-
-    class Factory(
-        private val repo: GerritRepository,
-        private val changeId: String
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ChangeDetailViewModel(repo, changeId) as T
     }
 }

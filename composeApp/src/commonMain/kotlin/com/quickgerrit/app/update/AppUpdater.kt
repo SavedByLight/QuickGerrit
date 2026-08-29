@@ -1,10 +1,7 @@
 package com.quickgerrit.app.update
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import androidx.core.content.FileProvider
-import com.quickgerrit.app.BuildConfig
+import com.quickgerrit.app.platform.AppConfig
+import com.quickgerrit.app.platform.openUrl
 import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,14 +10,12 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Checks GitHub Releases for a newer APK and downloads/installs it.
- *
- * Expects releases published by the CI workflow with a stable asset name
- * [BuildConfig.UPDATE_APK_NAME] (default: QuickGerrit-release.apk).
+ * Checks GitHub Releases for a newer build.
+ * On desktop, opens the release page / download URL in the browser.
+ * On Android, the platform layer can still download+install an APK.
  */
 object AppUpdater {
 
@@ -62,25 +57,22 @@ object AppUpdater {
         val htmlUrl: String?
     )
 
-    fun isConfigured(): Boolean = BuildConfig.GITHUB_REPO.isNotBlank()
+    fun isConfigured(): Boolean = AppConfig.GITHUB_REPO.isNotBlank()
 
-    /**
-     * Query the latest non-draft GitHub Release and return update info if newer
-     * than the currently installed app.
-     */
-    suspend fun checkForUpdate(context: Context): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
-        val repo = BuildConfig.GITHUB_REPO
+    suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
+        val repo = AppConfig.GITHUB_REPO
         if (repo.isBlank()) {
-            return@withContext Result.failure(IllegalStateException("GITHUB_REPO is not set (CI must pass -PgithubRepo=owner/name)"))
+            return@withContext Result.failure(
+                IllegalStateException("GITHUB_REPO is not set")
+            )
         }
-
         try {
             val url = "https://api.github.com/repos/$repo/releases/latest"
             AppLog.d("AppUpdater: checking $url")
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "QuickGerrit/${BuildConfig.VERSION_NAME}")
+                .header("User-Agent", "QuickGerrit/${AppConfig.VERSION_NAME}")
                 .build()
 
             val body = http.newCall(request).execute().use { response ->
@@ -93,121 +85,61 @@ object AppUpdater {
             val release = json.decodeFromString<GhRelease>(body)
             if (release.draft) return@withContext Result.success(null)
 
-            val preferred = BuildConfig.UPDATE_APK_NAME
+            val preferred = AppConfig.UPDATE_ASSET_NAME
             val asset = release.assets.firstOrNull { it.name == preferred }
-                ?: release.assets.firstOrNull { it.name.endsWith("-debug.apk") }
-                ?: release.assets.firstOrNull { it.name == "QuickGerrit-debug.apk" }
-                ?: release.assets.firstOrNull { it.name.endsWith(".apk") }
+                ?: release.assets.firstOrNull { it.name.endsWith(".apk", true) }
+                ?: release.assets.firstOrNull { it.name.endsWith(".msi", true) }
+                ?: release.assets.firstOrNull { it.name.endsWith(".deb", true) }
+                ?: release.assets.firstOrNull { it.name.endsWith(".AppImage", true) }
+                ?: release.assets.firstOrNull { it.name.endsWith(".rpm", true) }
+                ?: release.assets.firstOrNull()
 
             if (asset == null) {
-                AppLog.w("AppUpdater: no APK asset in release ${release.tagName}")
+                AppLog.w("AppUpdater: no downloadable asset on ${release.tagName}")
                 return@withContext Result.success(null)
             }
 
-            val remoteVersionName = release.tagName.removePrefix("v")
-            val remoteCode = parseVersionCode(remoteVersionName)
-            val localCode = BuildConfig.VERSION_CODE
-            val localName = BuildConfig.VERSION_NAME.removeSuffix("-debug")
-
-            val isNewer = when {
-                remoteCode != null && remoteCode > localCode -> true
-                remoteCode != null && remoteCode == localCode -> false
-                else -> isVersionNameNewer(remoteVersionName, localName)
+            val remoteTag = release.tagName.removePrefix("v")
+            val local = AppConfig.VERSION_NAME
+            if (!isNewer(remoteTag, local)) {
+                AppLog.d("AppUpdater: up to date (local=$local remote=$remoteTag)")
+                return@withContext Result.success(null)
             }
 
-            AppLog.i("AppUpdater: local=$localName($localCode) remote=$remoteVersionName($remoteCode) newer=$isNewer")
-
-            if (!isNewer) return@withContext Result.success(null)
-
-            Result.success(
-                UpdateInfo(
-                    tag = release.tagName,
-                    versionName = remoteVersionName,
-                    versionCode = remoteCode,
-                    downloadUrl = asset.browserDownloadUrl,
-                    assetName = asset.name,
-                    releaseNotes = release.body,
-                    htmlUrl = release.htmlUrl
-                )
+            val info = UpdateInfo(
+                tag = release.tagName,
+                versionName = remoteTag,
+                versionCode = remoteTag.substringAfterLast('.').toIntOrNull(),
+                downloadUrl = asset.browserDownloadUrl,
+                assetName = asset.name,
+                releaseNotes = release.body,
+                htmlUrl = release.htmlUrl
             )
-        } catch (e: Exception) {
-            AppLog.e("AppUpdater: check failed", e)
-            Result.failure(e)
+            AppLog.i("AppUpdater: update available ${info.versionName} (${info.assetName})")
+            Result.success(info)
+        } catch (t: Throwable) {
+            AppLog.e("AppUpdater: check failed", t)
+            Result.failure(t)
         }
     }
 
-    /**
-     * Download the APK into app cache and return a content:// URI suitable for install.
-     */
-    suspend fun downloadApk(context: Context, info: UpdateInfo): Result<Uri> = withContext(Dispatchers.IO) {
-        try {
-            val dir = File(context.cacheDir, "updates").apply { mkdirs() }
-            val out = File(dir, info.assetName)
-            if (out.exists()) out.delete()
-
-            AppLog.i("AppUpdater: downloading ${info.downloadUrl}")
-            val request = Request.Builder()
-                .url(info.downloadUrl)
-                .header("User-Agent", "QuickGerrit/${BuildConfig.VERSION_NAME}")
-                .header("Accept", "application/octet-stream")
-                .build()
-
-            http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw IllegalStateException("Download failed: HTTP ${response.code}")
-                }
-                response.body?.byteStream()?.use { input ->
-                    out.outputStream().use { output -> input.copyTo(output) }
-                } ?: throw IllegalStateException("Empty download body")
-            }
-
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                out
-            )
-            AppLog.i("AppUpdater: downloaded to $out → $uri")
-            Result.success(uri)
-        } catch (e: Exception) {
-            AppLog.e("AppUpdater: download failed", e)
-            Result.failure(e)
-        }
+    /** Open download or release page in the system browser / handler. */
+    fun openUpdate(info: UpdateInfo) {
+        val url = info.downloadUrl.ifBlank { info.htmlUrl.orEmpty() }
+        if (url.isNotBlank()) openUrl(url)
     }
 
-    /** Launch the system package installer for the given APK content URI. */
-    fun installApk(context: Context, apkUri: Uri) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
-    }
-
-    /** Open the release page in a browser as a fallback. */
-    fun openReleasePage(context: Context, info: UpdateInfo) {
-        val url = info.htmlUrl ?: return
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
-    }
-
-    private fun parseVersionCode(versionName: String): Int? {
-        // Supports 1.0.42 → 42, or plain integer tags
-        val parts = versionName.trim().split('.', '-', '+')
-        return parts.lastOrNull { it.all(Char::isDigit) && it.isNotEmpty() }?.toIntOrNull()
-            ?: versionName.filter { it.isDigit() }.toIntOrNull()
-    }
-
-    private fun isVersionNameNewer(remote: String, local: String): Boolean {
-        fun parts(v: String) = v.split('.', '-', '+').mapNotNull { it.toIntOrNull() }
+    private fun isNewer(remote: String, local: String): Boolean {
+        fun parts(v: String) = v.trim().removePrefix("v")
+            .split('.', '-', '_')
+            .mapNotNull { it.filter { c -> c.isDigit() }.toIntOrNull() }
         val r = parts(remote)
         val l = parts(local)
         val n = maxOf(r.size, l.size)
         for (i in 0 until n) {
-            val rv = r.getOrElse(i) { 0 }
-            val lv = l.getOrElse(i) { 0 }
-            if (rv != lv) return rv > lv
+            val a = r.getOrElse(i) { 0 }
+            val b = l.getOrElse(i) { 0 }
+            if (a != b) return a > b
         }
         return false
     }

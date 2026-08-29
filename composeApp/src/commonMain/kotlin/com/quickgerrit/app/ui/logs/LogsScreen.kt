@@ -44,7 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +63,6 @@ fun LogsScreen(onBack: () -> Unit) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
     var filter by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     var saving by remember { mutableStateOf(false) }
@@ -93,7 +91,7 @@ fun LogsScreen(onBack: () -> Unit) {
             saving = true
             try {
                 val path = withContext(Dispatchers.IO) {
-                    AppLog.saveFullLogToDownloads(context.applicationContext)
+                    AppLog.saveFullLog()
                 }
                 snackbarHostState.showSnackbar("Full log saved to $path")
             } catch (e: Exception) {

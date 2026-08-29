@@ -1,12 +1,10 @@
 package com.quickgerrit.app.ui.changes
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.ChangeInfo
 import com.quickgerrit.app.data.model.ChangeInput
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.platform.PlatformViewModel
 import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +35,7 @@ data class ChangesUiState(
     val nextStart: Int = 0
 )
 
-class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
+class ChangesViewModel(private val repo: GerritRepository) : PlatformViewModel() {
 
     companion object {
         const val PAGE_SIZE = 100
@@ -203,10 +201,5 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
                 }
             }
         }
-    }
-
-    class Factory(private val repo: GerritRepository) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = ChangesViewModel(repo) as T
     }
 }

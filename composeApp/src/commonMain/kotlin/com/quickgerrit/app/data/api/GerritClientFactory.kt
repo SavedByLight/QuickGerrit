@@ -1,7 +1,7 @@
 package com.quickgerrit.app.data.api
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import com.quickgerrit.app.BuildConfig
+import com.quickgerrit.app.platform.AppConfig
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.util.AppLog
 import kotlinx.serialization.json.Json
@@ -118,7 +118,7 @@ object GerritClientFactory {
                 AppLog.d(message, tag = "QuickGerrit.Http")
             }
         }.apply {
-            level = if (BuildConfig.DEBUG) {
+            level = if (AppConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.HEADERS
             } else {
                 HttpLoggingInterceptor.Level.BASIC
@@ -138,7 +138,7 @@ object GerritClientFactory {
             .callTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
 
-        if (BuildConfig.DEBUG) {
+        if (AppConfig.DEBUG) {
             builder
                 .sslSocketFactory(trustAllSslSocketFactory, trustAllManager)
                 .hostnameVerifier(trustAllHostnameVerifier)

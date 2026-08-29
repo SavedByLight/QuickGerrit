@@ -1,189 +1,117 @@
 package com.quickgerrit.app.ui.update
 
-import android.os.Build
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
-import com.quickgerrit.app.BuildConfig
+import com.quickgerrit.app.platform.AppConfig
 import com.quickgerrit.app.update.AppUpdater
 import kotlinx.coroutines.launch
 
 @Composable
-fun UpdateCheckButton(
-    modifier: Modifier = Modifier
+fun UpdateDialog(
+    onDismiss: () -> Unit,
+    autoCheck: Boolean = true
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
-    var downloading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var update by remember { mutableStateOf<AppUpdater.UpdateInfo?>(null) }
-    var showDialog by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
 
-    val installPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        // User returned from unknown-sources settings; try install again if we still have a URI
-    }
-
-    fun ensureInstallPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
-        if (context.packageManager.canRequestPackageInstalls()) return true
-        val intent = android.content.Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            "package:${context.packageName}".toUri()
-        )
-        installPermissionLauncher.launch(intent)
-        return false
-    }
-
-    OutlinedButton(
-        onClick = {
-            if (!AppUpdater.isConfigured()) {
-                status = "Update check not configured (GITHUB_REPO empty)"
-                return@OutlinedButton
-            }
+    fun runCheck() {
+        scope.launch {
             checking = true
+            error = null
             status = null
-            scope.launch {
-                val result = AppUpdater.checkForUpdate(context)
+            update = null
+            if (!AppUpdater.isConfigured()) {
+                error = "Update checks are not configured (GITHUB_REPO missing)."
                 checking = false
-                result.fold(
-                    onSuccess = { info ->
-                        if (info == null) {
-                            status = "You're on the latest version (${BuildConfig.VERSION_NAME})"
-                        } else {
-                            update = info
-                            showDialog = true
-                        }
-                    },
-                    onFailure = { e ->
-                        status = "Check failed: ${e.message}"
-                    }
-                )
+                return@launch
             }
-        },
-        enabled = !checking && !downloading,
-        modifier = modifier.fillMaxWidth()
-    ) {
-        if (checking) {
-            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("Checking…")
-        } else {
-            Icon(Icons.Default.SystemUpdate, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Check for updates")
+            val result = AppUpdater.checkForUpdate()
+            checking = false
+            result.fold(
+                onSuccess = { info ->
+                    if (info == null) {
+                        status = "You're on the latest version (${AppConfig.VERSION_NAME})"
+                    } else {
+                        update = info
+                    }
+                },
+                onFailure = { t ->
+                    error = t.message ?: "Update check failed"
+                }
+            )
         }
     }
 
-    status?.let {
-        Text(
-            it,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+    LaunchedEffect(autoCheck) {
+        if (autoCheck) runCheck()
     }
 
-    if (showDialog && update != null) {
-        val info = update!!
-        AlertDialog(
-            onDismissRequest = { if (!downloading) showDialog = false },
-            icon = { Icon(Icons.Default.SystemUpdate, null) },
-            title = { Text("Update available") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        "Version ${info.versionName} is available (you have ${BuildConfig.VERSION_NAME}).",
-                        fontWeight = FontWeight.Medium
-                    )
-                    info.releaseNotes?.takeIf { it.isNotBlank() }?.let { notes ->
-                        Spacer(Modifier.height(12.dp))
-                        Text("What's new", style = MaterialTheme.typography.labelMedium)
-                        // Show full last-commit message from the GitHub release body
-                        Text(notes.take(2000), style = MaterialTheme.typography.bodySmall)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Check for updates") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                when {
+                    checking -> {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                        Spacer(Modifier.height(8.dp))
+                        Text("Checking GitHub Releases…")
                     }
-                    if (downloading) {
-                        Spacer(Modifier.height(16.dp))
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text("Downloading…", style = MaterialTheme.typography.bodySmall)
+                    error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
+                    update != null -> {
+                        val info = update!!
+                        Text("Version ${info.versionName} is available (you have ${AppConfig.VERSION_NAME}).")
+                        Spacer(Modifier.height(8.dp))
+                        info.releaseNotes?.takeIf { it.isNotBlank() }?.let {
+                            Text("Release notes:", style = MaterialTheme.typography.labelLarge)
+                            Text(it.take(1500), style = MaterialTheme.typography.bodySmall)
+                        }
                     }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (!ensureInstallPermission()) {
-                            status = "Allow install from this source, then try again"
-                            return@Button
-                        }
-                        downloading = true
-                        scope.launch {
-                            val dl = AppUpdater.downloadApk(context, info)
-                            downloading = false
-                            dl.fold(
-                                onSuccess = { uri ->
-                                    showDialog = false
-                                    AppUpdater.installApk(context, uri)
-                                },
-                                onFailure = { e ->
-                                    status = "Download failed: ${e.message}"
-                                    showDialog = false
-                                }
-                            )
-                        }
-                    },
-                    enabled = !downloading
-                ) {
-                    Text(if (downloading) "Downloading…" else "Download & install")
-                }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(
-                        onClick = {
-                            AppUpdater.openReleasePage(context, info)
-                        },
-                        enabled = !downloading
-                    ) { Text("View on GitHub") }
-                    TextButton(
-                        onClick = { showDialog = false },
-                        enabled = !downloading
-                    ) { Text("Later") }
+                    status != null -> Text(status!!)
+                    else -> Text("Tap Check to look for updates.")
                 }
             }
-        )
-    }
-}
-
-/**
- * Silently checks for updates once per process (e.g. from main screen).
- * Calls [onUpdateAvailable] when a newer release exists.
- */
-@Composable
-fun AutoUpdateChecker(
-    onUpdateAvailable: (AppUpdater.UpdateInfo) -> Unit = {}
-) {
-    val context = LocalContext.current
-    var checked by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        if (checked || !AppUpdater.isConfigured()) return@LaunchedEffect
-        checked = true
-        val result = AppUpdater.checkForUpdate(context)
-        result.getOrNull()?.let { onUpdateAvailable(it) }
-    }
+        },
+        confirmButton = {
+            val info = update
+            if (info != null) {
+                TextButton(onClick = {
+                    AppUpdater.openUpdate(info)
+                    onDismiss()
+                }) { Text("Download") }
+            } else if (!checking) {
+                TextButton(onClick = { runCheck() }) { Text("Check") }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }

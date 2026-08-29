@@ -503,14 +503,15 @@ class GerritRepository(
 
     private fun decodeBase64Bytes(compact: String): ByteArray? {
         if (compact.isEmpty()) return ByteArray(0)
-        val flags = listOf(
-            android.util.Base64.DEFAULT,
-            android.util.Base64.NO_WRAP,
-            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+        val cleaned = compact.replace("\s".toRegex(), "")
+        val decoders = listOf(
+            java.util.Base64.getDecoder(),
+            java.util.Base64.getUrlDecoder(),
+            java.util.Base64.getMimeDecoder()
         )
-        for (flag in flags) {
+        for (dec in decoders) {
             try {
-                return android.util.Base64.decode(compact, flag)
+                return dec.decode(cleaned)
             } catch (_: Exception) {
             }
         }

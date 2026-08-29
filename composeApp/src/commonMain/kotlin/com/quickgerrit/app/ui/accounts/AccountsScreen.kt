@@ -14,7 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.quickgerrit.app.BuildConfig
+import com.quickgerrit.app.platform.AppConfig
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.ui.update.UpdateCheckButton
 import java.util.UUID
@@ -99,7 +99,7 @@ fun AccountsScreen(
             HorizontalDivider()
             Column(Modifier.padding(16.dp)) {
                 Text(
-                    "App v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    "App v${AppConfig.VERSION_NAME} (${AppConfig.VERSION_CODE})",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

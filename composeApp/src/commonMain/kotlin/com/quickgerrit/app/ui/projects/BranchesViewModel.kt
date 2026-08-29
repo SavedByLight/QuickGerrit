@@ -1,10 +1,8 @@
 package com.quickgerrit.app.ui.projects
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.BranchInfo
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.platform.PlatformViewModel
 import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +23,7 @@ data class BranchesUiState(
 class BranchesViewModel(
     private val repo: GerritRepository,
     private val project: String
-) : ViewModel() {
+) : PlatformViewModel() {
 
     private val _ui = MutableStateFlow(BranchesUiState(project = project))
     val ui: StateFlow<BranchesUiState> = _ui.asStateFlow()
@@ -79,14 +77,5 @@ class BranchesViewModel(
                 }
             }
         }
-    }
-
-    class Factory(
-        private val repo: GerritRepository,
-        private val project: String
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            BranchesViewModel(repo, project) as T
     }
 }

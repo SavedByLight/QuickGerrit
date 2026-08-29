@@ -1,11 +1,9 @@
 package com.quickgerrit.app.ui.dashboard
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.ChangeInfo
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.platform.PlatformViewModel
 import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -89,7 +87,7 @@ val DEFAULT_DASHBOARD_SECTIONS = listOf(
     )
 )
 
-class DashboardViewModel(private val repo: GerritRepository) : ViewModel() {
+class DashboardViewModel(private val repo: GerritRepository) : PlatformViewModel() {
 
     private val _ui = MutableStateFlow(
         DashboardUiState(
@@ -172,11 +170,5 @@ class DashboardViewModel(private val repo: GerritRepository) : ViewModel() {
                 }
             }
         }
-    }
-
-    class Factory(private val repo: GerritRepository) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DashboardViewModel(repo) as T
     }
 }

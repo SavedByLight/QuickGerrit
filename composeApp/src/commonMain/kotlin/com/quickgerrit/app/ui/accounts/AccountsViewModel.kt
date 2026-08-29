@@ -1,10 +1,8 @@
 package com.quickgerrit.app.ui.accounts
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.platform.PlatformViewModel
 import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +18,7 @@ data class AccountsUiState(
     val testing: Boolean = false
 )
 
-class AccountsViewModel(private val repo: GerritRepository) : ViewModel() {
+class AccountsViewModel(private val repo: GerritRepository) : PlatformViewModel() {
 
     private val _ui = MutableStateFlow(AccountsUiState())
     val ui: StateFlow<AccountsUiState> = _ui.asStateFlow()
@@ -85,10 +83,5 @@ class AccountsViewModel(private val repo: GerritRepository) : ViewModel() {
 
     fun clearError() {
         _ui.update { it.copy(error = null) }
-    }
-
-    class Factory(private val repo: GerritRepository) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = AccountsViewModel(repo) as T
     }
 }

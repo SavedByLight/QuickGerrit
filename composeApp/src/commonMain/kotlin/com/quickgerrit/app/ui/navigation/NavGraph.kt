@@ -1,14 +1,11 @@
 package com.quickgerrit.app.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import com.quickgerrit.app.QuickGerritApp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.quickgerrit.app.AppContainer
 import com.quickgerrit.app.ui.accounts.AccountsScreen
 import com.quickgerrit.app.ui.accounts.AccountsViewModel
 import com.quickgerrit.app.ui.change.ChangeDetailScreen
@@ -25,173 +22,145 @@ import com.quickgerrit.app.ui.projects.BranchesViewModel
 import com.quickgerrit.app.ui.projects.ProjectsScreen
 import com.quickgerrit.app.ui.projects.ProjectsViewModel
 
-sealed class Screen(val route: String) {
-    data object Dashboard : Screen("dashboard")
-    data object Changes : Screen("changes")
-    data object Projects : Screen("projects")
-    data object Branches : Screen("branches/{project}") {
-        fun create(project: String) =
-            "branches/${java.net.URLEncoder.encode(project, "UTF-8")}"
-    }
-    data object Accounts : Screen("accounts")
-    data object Logs : Screen("logs")
-    data object ChangeDetail : Screen("change/{changeId}") {
-        fun create(changeId: String) = "change/${java.net.URLEncoder.encode(changeId, "UTF-8")}"
-    }
-    data object Diff : Screen("diff/{changeId}/{revisionId}/{filePath}") {
-        fun create(changeId: String, revisionId: String, filePath: String) =
-            "diff/${java.net.URLEncoder.encode(changeId, "UTF-8")}/$revisionId/${java.net.URLEncoder.encode(filePath, "UTF-8")}"
-    }
-    data object FileEditor : Screen("edit/{changeId}/{revisionId}/{project}/{branch}/{filePath}") {
-        fun create(
-            changeId: String,
-            revisionId: String,
-            filePath: String,
-            project: String = "",
-            branch: String = "master"
-        ): String {
-            val enc = { s: String -> java.net.URLEncoder.encode(s, "UTF-8") }
-            return "edit/${enc(changeId)}/${enc(revisionId)}/${enc(project.ifBlank { "_" })}/${enc(branch.ifBlank { "master" })}/${enc(filePath)}"
-        }
-    }
+sealed class Screen {
+    data object Dashboard : Screen()
+    data object Changes : Screen()
+    data object Projects : Screen()
+    data class Branches(val project: String) : Screen()
+    data object Accounts : Screen()
+    data object Logs : Screen()
+    data class ChangeDetail(val changeId: String) : Screen()
+    data class Diff(val changeId: String, val revisionId: String, val filePath: String) : Screen()
+    data class FileEditor(
+        val changeId: String,
+        val revisionId: String,
+        val filePath: String,
+        val project: String = "",
+        val branch: String = "master"
+    ) : Screen()
 }
 
 @Composable
 fun QuickGerritNavGraph() {
-    val navController = rememberNavController()
-    val app = LocalContext.current.applicationContext as QuickGerritApp
-    val repo = app.repository
+    val repo = AppContainer.repository
+    var stack by remember { mutableStateOf(listOf<Screen>(Screen.Dashboard)) }
+    val current = stack.last()
 
-    NavHost(navController = navController, startDestination = Screen.Dashboard.route) {
-        composable(Screen.Dashboard.route) {
-            val vm: DashboardViewModel = viewModel(factory = DashboardViewModel.Factory(repo))
+    fun navigate(screen: Screen) {
+        stack = stack + screen
+    }
+
+    fun pop() {
+        if (stack.size > 1) stack = stack.dropLast(1)
+    }
+
+    fun popTo(predicate: (Screen) -> Boolean) {
+        val idx = stack.indexOfLast(predicate)
+        if (idx >= 0) stack = stack.take(idx + 1)
+        else pop()
+    }
+
+    when (val screen = current) {
+        is Screen.Dashboard -> {
+            val vm = remember { DashboardViewModel(repo) }
             DashboardScreen(
                 viewModel = vm,
-                onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) },
-                onOpenAccounts = { navController.navigate(Screen.Accounts.route) },
-                onOpenChanges = { navController.navigate(Screen.Changes.route) },
-                onOpenProjects = { navController.navigate(Screen.Projects.route) },
-                onOpenLogs = { navController.navigate(Screen.Logs.route) }
+                onOpenChange = { id -> navigate(Screen.ChangeDetail(id)) },
+                onOpenAccounts = { navigate(Screen.Accounts) },
+                onOpenChanges = { navigate(Screen.Changes) },
+                onOpenProjects = { navigate(Screen.Projects) },
+                onOpenLogs = { navigate(Screen.Logs) }
             )
         }
-        composable(Screen.Changes.route) {
-            val vm: ChangesViewModel = viewModel(factory = ChangesViewModel.Factory(repo))
+        is Screen.Changes -> {
+            val vm = remember { ChangesViewModel(repo) }
             ChangesScreen(
                 viewModel = vm,
-                onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) },
-                onOpenAccounts = { navController.navigate(Screen.Accounts.route) },
-                onOpenProjects = { navController.navigate(Screen.Projects.route) },
-                onOpenLogs = { navController.navigate(Screen.Logs.route) },
-                onOpenDashboard = { navController.navigate(Screen.Dashboard.route) {
-                    popUpTo(Screen.Dashboard.route) { inclusive = true }
-                } }
-            )
-        }
-        composable(Screen.Projects.route) {
-            val vm: ProjectsViewModel = viewModel(factory = ProjectsViewModel.Factory(repo))
-            ProjectsScreen(
-                viewModel = vm,
-                onBack = { navController.popBackStack() },
-                onOpenChange = { id -> navController.navigate(Screen.ChangeDetail.create(id)) },
-                onOpenBranches = { project ->
-                    navController.navigate(Screen.Branches.create(project))
+                onOpenChange = { id -> navigate(Screen.ChangeDetail(id)) },
+                onOpenAccounts = { navigate(Screen.Accounts) },
+                onOpenProjects = { navigate(Screen.Projects) },
+                onOpenLogs = { navigate(Screen.Logs) },
+                onOpenDashboard = {
+                    stack = listOf(Screen.Dashboard)
                 }
             )
         }
-        composable(
-            route = Screen.Branches.route,
-            arguments = listOf(navArgument("project") { type = NavType.StringType })
-        ) { entry ->
-            val project = java.net.URLDecoder.decode(
-                entry.arguments?.getString("project") ?: "",
-                "UTF-8"
+        is Screen.Projects -> {
+            val vm = remember { ProjectsViewModel(repo) }
+            ProjectsScreen(
+                viewModel = vm,
+                onBack = { pop() },
+                onOpenChange = { id -> navigate(Screen.ChangeDetail(id)) },
+                onOpenBranches = { project -> navigate(Screen.Branches(project)) }
             )
-            val vm: BranchesViewModel = viewModel(
-                factory = BranchesViewModel.Factory(repo, project)
-            )
+        }
+        is Screen.Branches -> {
+            val vm = remember(screen.project) { BranchesViewModel(repo, screen.project) }
             BranchesScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() }
+                onBack = { pop() }
             )
         }
-        composable(Screen.Accounts.route) {
-            val vm: AccountsViewModel = viewModel(factory = AccountsViewModel.Factory(repo))
+        is Screen.Accounts -> {
+            val vm = remember { AccountsViewModel(repo) }
             AccountsScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() }
+                onBack = { pop() }
             )
         }
-        composable(Screen.Logs.route) {
-            LogsScreen(onBack = { navController.popBackStack() })
+        is Screen.Logs -> {
+            LogsScreen(onBack = { pop() })
         }
-        composable(
-            route = Screen.ChangeDetail.route,
-            arguments = listOf(navArgument("changeId") { type = NavType.StringType })
-        ) { entry ->
-            val changeId = java.net.URLDecoder.decode(entry.arguments?.getString("changeId") ?: "", "UTF-8")
-            val vm: ChangeDetailViewModel = viewModel(factory = ChangeDetailViewModel.Factory(repo, changeId))
+        is Screen.ChangeDetail -> {
+            val vm = remember(screen.changeId) { ChangeDetailViewModel(repo, screen.changeId) }
             ChangeDetailScreen(
                 viewModel = vm,
-                onBack = { navController.popBackStack() },
+                onBack = { pop() },
                 onOpenDiff = { rev, path ->
-                    navController.navigate(Screen.Diff.create(changeId, rev, path))
+                    navigate(Screen.Diff(screen.changeId, rev, path))
                 },
                 onOpenEditor = { rev, path, project, branch ->
-                    navController.navigate(
-                        Screen.FileEditor.create(changeId, rev, path, project, branch)
+                    navigate(
+                        Screen.FileEditor(
+                            changeId = screen.changeId,
+                            revisionId = rev,
+                            filePath = path,
+                            project = project,
+                            branch = branch
+                        )
                     )
                 }
             )
         }
-        composable(
-            route = Screen.Diff.route,
-            arguments = listOf(
-                navArgument("changeId") { type = NavType.StringType },
-                navArgument("revisionId") { type = NavType.StringType },
-                navArgument("filePath") { type = NavType.StringType }
-            )
-        ) { entry ->
-            val changeId = java.net.URLDecoder.decode(entry.arguments?.getString("changeId") ?: "", "UTF-8")
-            val revisionId = entry.arguments?.getString("revisionId") ?: "current"
-            val filePath = java.net.URLDecoder.decode(entry.arguments?.getString("filePath") ?: "", "UTF-8")
+        is Screen.Diff -> {
             DiffScreen(
-                changeId = changeId,
-                revisionId = revisionId,
-                filePath = filePath,
+                changeId = screen.changeId,
+                revisionId = screen.revisionId,
+                filePath = screen.filePath,
                 repository = repo,
-                onBack = { navController.popBackStack() },
+                onBack = { pop() },
                 onEdit = {
-                    // project/branch unknown on diff route alone — placeholders; detail passes real ones
-                    navController.navigate(Screen.FileEditor.create(changeId, revisionId, filePath))
+                    navigate(
+                        Screen.FileEditor(
+                            changeId = screen.changeId,
+                            revisionId = screen.revisionId,
+                            filePath = screen.filePath
+                        )
+                    )
                 }
             )
         }
-        composable(
-            route = Screen.FileEditor.route,
-            arguments = listOf(
-                navArgument("changeId") { type = NavType.StringType },
-                navArgument("revisionId") { type = NavType.StringType },
-                navArgument("project") { type = NavType.StringType },
-                navArgument("branch") { type = NavType.StringType },
-                navArgument("filePath") { type = NavType.StringType }
-            )
-        ) { entry ->
-            val dec = { s: String? -> java.net.URLDecoder.decode(s ?: "", "UTF-8") }
-            val changeId = dec(entry.arguments?.getString("changeId"))
-            val revisionId = dec(entry.arguments?.getString("revisionId")).ifBlank { "current" }
-            val project = dec(entry.arguments?.getString("project")).let { if (it == "_") "" else it }
-            val branch = dec(entry.arguments?.getString("branch")).ifBlank { "master" }
-            val filePath = dec(entry.arguments?.getString("filePath"))
+        is Screen.FileEditor -> {
             FileEditorScreen(
-                changeId = changeId,
-                revisionId = revisionId,
-                filePath = filePath,
-                project = project,
-                branch = branch,
+                changeId = screen.changeId,
+                revisionId = screen.revisionId,
+                filePath = screen.filePath,
+                project = screen.project,
+                branch = screen.branch,
                 repository = repo,
-                onBack = { navController.popBackStack() },
+                onBack = { pop() },
                 onPublished = {
-                    navController.popBackStack(Screen.ChangeDetail.create(changeId), inclusive = false)
+                    popTo { it is Screen.ChangeDetail && it.changeId == screen.changeId }
                 }
             )
         }

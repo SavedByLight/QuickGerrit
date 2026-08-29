@@ -1,11 +1,9 @@
 package com.quickgerrit.app.ui.projects
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.quickgerrit.app.data.model.ChangeInput
 import com.quickgerrit.app.data.model.ProjectInfo
 import com.quickgerrit.app.data.repository.GerritRepository
+import com.quickgerrit.app.platform.PlatformViewModel
 import com.quickgerrit.app.util.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +20,7 @@ data class ProjectsUiState(
     val createError: String? = null
 )
 
-class ProjectsViewModel(private val repo: GerritRepository) : ViewModel() {
+class ProjectsViewModel(private val repo: GerritRepository) : PlatformViewModel() {
 
     private val _ui = MutableStateFlow(ProjectsUiState())
     val ui: StateFlow<ProjectsUiState> = _ui.asStateFlow()
@@ -89,10 +87,5 @@ class ProjectsViewModel(private val repo: GerritRepository) : ViewModel() {
                 }
             }
         }
-    }
-
-    class Factory(private val repo: GerritRepository) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = ProjectsViewModel(repo) as T
     }
 }
