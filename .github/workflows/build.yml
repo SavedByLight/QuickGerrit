@@ -10,42 +10,22 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Android APK (original :app module + optional composeApp Android)
+  # Shared version metadata
   # ---------------------------------------------------------------------------
-  android:
+  version:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
     outputs:
-      version_code: ${{ steps.version.outputs.version_code }}
-      version_name: ${{ steps.version.outputs.version_name }}
-      tag: ${{ steps.version.outputs.tag }}
-      subject: ${{ steps.commit.outputs.subject }}
-      body: ${{ steps.commit.outputs.body }}
-      short: ${{ steps.commit.outputs.short }}
-
+      version_code: ${{ steps.v.outputs.version_code }}
+      version_name: ${{ steps.v.outputs.version_name }}
+      tag: ${{ steps.v.outputs.tag }}
+      subject: ${{ steps.c.outputs.subject }}
+      body: ${{ steps.c.outputs.body }}
+      short: ${{ steps.c.outputs.short }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Compute version
-        id: version
+      - id: v
         run: |
           CODE="${{ github.run_number }}"
           NAME="1.0.${CODE}"
@@ -53,14 +33,11 @@ jobs:
           echo "version_name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "tag=v${NAME}" >> "$GITHUB_OUTPUT"
           echo "Version: ${NAME} (code ${CODE})"
-
-      - name: Capture last commit
-        id: commit
+      - id: c
         run: |
           SUBJECT=$(git log -1 --pretty=%s)
           BODY=$(git log -1 --pretty=%b)
           SHORT=$(git log -1 --pretty=%h)
-          FULL=$(git log -1 --pretty=%H)
           {
             echo "subject<<EOF"
             echo "$SUBJECT"
@@ -69,8 +46,24 @@ jobs:
             echo "$BODY"
             echo "EOF"
             echo "short=${SHORT}"
-            echo "full=${FULL}"
           } >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Android APK
+  # ---------------------------------------------------------------------------
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
 
       - name: Decode release keystore (optional)
         env:
@@ -78,234 +71,213 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
-            echo "Using secrets keystore (release.keystore)"
+            echo "Using secrets keystore"
           elif [ -f app/ci.keystore ]; then
-            echo "Using committed CI keystore (app/ci.keystore) — same cert every run"
+            echo "Using committed CI keystore"
           else
-            echo "WARNING: no keystore found; continuing without signed release cert"
+            echo "WARNING: no keystore found"
           fi
 
-      - name: Build Android debug APK (:app)
+      - name: Build Android APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           ./gradlew :app:assembleDebug \
-            -PversionCode=${{ steps.version.outputs.version_code }} \
-            -PversionName=${{ steps.version.outputs.version_name }} \
+            -PversionCode=${{ needs.version.outputs.version_code }} \
+            -PversionName=${{ needs.version.outputs.version_name }} \
             -PgithubRepo=${{ github.repository }} \
-            --stacktrace || {
-              echo "WARN: :app:assembleDebug failed — trying composeApp Android if present"
-              ./gradlew :composeApp:assembleDebug \
-                -PversionCode=${{ steps.version.outputs.version_code }} \
-                -PversionName=${{ steps.version.outputs.version_name }} \
-                -PgithubRepo=${{ github.repository }} \
-                --stacktrace || true
-            }
+            --stacktrace
 
-      - name: Package Android APK
+      - name: Stage APK
         run: |
           mkdir -p dist
-          DEBUG_APK=$(find app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
-          if [ -z "$DEBUG_APK" ]; then
-            DEBUG_APK=$(find composeApp/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find composeApp/build/outputs/apk -name "*.apk" 2>/dev/null | head -1)
           fi
-          if [ -z "$DEBUG_APK" ]; then
-            echo "ERROR: no debug APK found"
-            find . -path '*/build/outputs/apk/*' -name '*.apk' 2>/dev/null || true
+          if [ -z "$APK" ]; then
+            echo "ERROR: no APK found"
+            find . -name "*.apk" 2>/dev/null || true
             exit 1
           fi
-          cp "$DEBUG_APK" dist/QuickGerrit-debug.apk
-          echo "=== APK signing cert ==="
-          $ANDROID_HOME/build-tools/*/apksigner verify --print-certs dist/QuickGerrit-debug.apk 2>/dev/null \
-            || echo "(could not print cert)"
+          cp "$APK" dist/QuickGerrit-debug.apk
           ls -la dist/
 
-      - name: Upload Android artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: dist/QuickGerrit-debug.apk
           if-no-files-found: error
 
-      - name: Clean up keystore
-        if: always()
+      - if: always()
         run: rm -f app/release.keystore
 
   # ---------------------------------------------------------------------------
-  # Desktop packages (Linux: Deb, Rpm, AppImage)
+  # Desktop Linux: DEB, RPM, AppImage
   # ---------------------------------------------------------------------------
   desktop-linux:
+    needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: android   # reuse version outputs
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Install packaging tools (fakeroot, rpm, etc.)
+      - name: Install packaging tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq fakeroot rpm libfuse2 || true
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            fakeroot rpm libfuse2 binutils || true
 
-      - name: Build desktop distributions (Deb, Rpm, AppImage)
+      - name: Build Deb / Rpm / AppImage
         run: |
-          VERSION="${{ needs.android.outputs.version_name }}"
-          echo "Building desktop packages for version $VERSION"
-
-          # Prefer explicit targets so we get all three on Linux
+          V="${{ needs.version.outputs.version_name }}"
+          REPO="${{ github.repository }}"
+          set +e
           ./gradlew :composeApp:packageDeb \
-            -PversionName="$VERSION" \
-            -PgithubRepo=${{ github.repository }} \
-            --stacktrace || echo "WARN: packageDeb failed"
-
+            -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
+          DEB_RC=$?
           ./gradlew :composeApp:packageRpm \
-            -PversionName="$VERSION" \
-            -PgithubRepo=${{ github.repository }} \
-            --stacktrace || echo "WARN: packageRpm failed"
-
+            -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
+          RPM_RC=$?
           ./gradlew :composeApp:packageAppImage \
-            -PversionName="$VERSION" \
-            -PgithubRepo=${{ github.repository }} \
-            --stacktrace || echo "WARN: packageAppImage failed"
+            -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
+          AI_RC=$?
+          # Fallback single task if individual targets fail
+          if [ $DEB_RC -ne 0 ] || [ $RPM_RC -ne 0 ] || [ $AI_RC -ne 0 ]; then
+            ./gradlew :composeApp:packageDistributionForCurrentOS \
+              -PversionName="$V" -PgithubRepo="$REPO" --stacktrace || true
+          fi
+          set -e
+          echo "Exit codes: deb=$DEB_RC rpm=$RPM_RC appimage=$AI_RC"
 
-          # Fallback: current-OS distribution if individual targets unavailable
-          ./gradlew :composeApp:packageDistributionForCurrentOS \
-            -PversionName="$VERSION" \
-            -PgithubRepo=${{ github.repository }} \
-            --stacktrace || true
-
-      - name: Collect desktop packages
+      - name: Stage Linux packages
         run: |
           mkdir -p dist
-          # Compose Desktop puts packages under build/compose/binaries/...
-          find composeApp/build/compose/binaries -type f \( \
-            -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" -o -name "*.dmg" \
-          \) -exec cp -v {} dist/ \; 2>/dev/null || true
-
-          # Also check other common locations
           find composeApp/build -type f \( \
             -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \
-          \) -exec cp -v {} dist/ \; 2>/dev/null || true
-
+          \) -print -exec cp -v {} dist/ \; 2>/dev/null || true
+          echo "=== staged ==="
           ls -la dist/ || true
+          # Fail the job if nothing was produced so the release does not
+          # silently ship Android-only again
           if [ -z "$(ls -A dist 2>/dev/null)" ]; then
-            echo "WARNING: no desktop packages produced (composeApp may still need platform adapters)"
+            echo "::error::No desktop Linux packages produced. Check composeApp packaging."
+            find composeApp/build -type f 2>/dev/null | head -50 || true
+            exit 1
           fi
 
-      - name: Upload Linux desktop artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: desktop-linux
-          path: |
-            dist/*.deb
-            dist/*.rpm
-            dist/*.AppImage
-          if-no-files-found: warn
+          path: dist/
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Desktop package (Windows: MSI)
+  # Desktop Windows: MSI
   # ---------------------------------------------------------------------------
   desktop-windows:
+    needs: version
     runs-on: windows-latest
     timeout-minutes: 60
-    needs: android
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Build MSI
         shell: bash
         run: |
-          VERSION="${{ needs.android.outputs.version_name }}"
-          echo "Building MSI for version $VERSION"
+          V="${{ needs.version.outputs.version_name }}"
+          REPO="${{ github.repository }}"
+          chmod +x gradlew || true
+          set +e
           ./gradlew :composeApp:packageMsi \
-            -PversionName="$VERSION" \
-            -PgithubRepo=${{ github.repository }} \
-            --stacktrace || {
-              echo "WARN: packageMsi failed — trying packageDistributionForCurrentOS"
-              ./gradlew :composeApp:packageDistributionForCurrentOS \
-                -PversionName="$VERSION" \
-                -PgithubRepo=${{ github.repository }} \
-                --stacktrace || true
-            }
+            -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            ./gradlew :composeApp:packageDistributionForCurrentOS \
+              -PversionName="$V" -PgithubRepo="$REPO" --stacktrace
+            RC=$?
+          fi
+          set -e
+          exit $RC
 
-      - name: Collect MSI
+      - name: Stage MSI
         shell: bash
         run: |
           mkdir -p dist
-          find composeApp/build/compose/binaries -type f -name "*.msi" -exec cp -v {} dist/ \; 2>/dev/null || true
-          find composeApp/build -type f -name "*.msi" -exec cp -v {} dist/ \; 2>/dev/null || true
+          find composeApp/build -type f -name "*.msi" -print -exec cp -v {} dist/ \; 2>/dev/null || true
           ls -la dist/ || true
+          if [ -z "$(ls -A dist 2>/dev/null)" ]; then
+            echo "::error::No MSI produced"
+            find composeApp/build -type f 2>/dev/null | head -50 || true
+            exit 1
+          fi
 
-      - name: Upload Windows desktop artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows
-          path: dist/*.msi
-          if-no-files-found: warn
+          path: dist/
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Create GitHub Release with all artifacts
+  # GitHub Release — attach every artifact
   # ---------------------------------------------------------------------------
   release:
+    needs: [version, android, desktop-linux, desktop-windows]
+    # Release even if one desktop job fails, as long as Android succeeded
+    if: |
+      always() &&
+      github.event_name != 'pull_request' &&
+      needs.android.result == 'success'
     runs-on: ubuntu-latest
-    needs: [android, desktop-linux, desktop-windows]
-    if: github.event_name != 'pull_request'
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: false
 
-      - name: Prepare dist
+      - name: Collect release files
         run: |
           mkdir -p dist
           find artifacts -type f \( \
             -name "*.apk" -o -name "*.deb" -o -name "*.rpm" \
             -o -name "*.AppImage" -o -name "*.msi" -o -name "*.dmg" \
-          \) -exec cp -v {} dist/ \;
+          \) -print -exec cp -v {} dist/ \;
+          echo "=== release contents ==="
           ls -la dist/
+          if [ ! -f dist/QuickGerrit-debug.apk ]; then
+            echo "ERROR: APK missing from release set"
+            exit 1
+          fi
+          COUNT=$(find dist -type f | wc -l)
+          echo "Total files for release: $COUNT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.android.outputs.tag }}
-          name: QuickGerrit ${{ needs.android.outputs.version_name }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: QuickGerrit ${{ needs.version.outputs.version_name }}
           body: |
-            ## QuickGerrit ${{ needs.android.outputs.version_name }}
+            ## QuickGerrit ${{ needs.version.outputs.version_name }}
 
-            **Last commit:** `${{ needs.android.outputs.short }}` on `${{ github.ref_name }}`
+            **Last commit:** `${{ needs.version.outputs.short }}` on `${{ github.ref_name }}`
 
-            ### ${{ needs.android.outputs.subject }}
+            ### ${{ needs.version.outputs.subject }}
 
-            ${{ needs.android.outputs.body }}
+            ${{ needs.version.outputs.body }}
 
             ---
 
@@ -319,11 +291,13 @@ jobs:
             | **Linux (portable)** | `*.AppImage` |
             | **Windows** | `*.msi` |
 
-            Android APK keeps the same package id and signing cert across releases so updates install in place.
-            Desktop packages are produced by Compose Multiplatform (`:composeApp`).
-          files: dist/*
+            Android APK keeps the same package id and signing cert so updates install in place.
+            Desktop packages are built from `:composeApp` (Compose Multiplatform).
+          files: |
+            dist/*
           draft: false
           prerelease: false
           generate_release_notes: false
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
