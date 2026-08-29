@@ -10,6 +10,10 @@ interface GerritApi {
     @GET("a/accounts/self")
     suspend fun getSelf(): AccountInfo
 
+    /** Fallback for older Gerrit instances that require a trailing slash. */
+    @GET("a/accounts/self/")
+    suspend fun getSelfTrailingSlash(): AccountInfo
+
     // Changes
     @GET("a/changes/")
     suspend fun queryChanges(

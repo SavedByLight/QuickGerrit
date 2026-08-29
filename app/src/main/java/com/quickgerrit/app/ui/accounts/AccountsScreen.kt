@@ -230,10 +230,10 @@ private fun AccountDialog(
                     onSave(
                         GerritAccount(
                             id = initial?.id ?: "",
-                            name = name,
-                            baseUrl = baseUrl.trimEnd('/'),
-                            username = username,
-                            httpPassword = password,
+                            name = name.trim(),
+                            baseUrl = baseUrl.trim().trimEnd('/'),
+                            username = username.trim(),
+                            httpPassword = password.trim(),
                             isDefault = isDefault
                         )
                     )

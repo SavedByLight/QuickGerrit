@@ -28,14 +28,33 @@ class GerritRepository(
     }
 
     suspend fun testLogin(account: GerritAccount): AccountInfo {
-        AppLog.i("Testing login for ${account.username} @ ${account.baseUrl}")
+        // Normalize the same way the HTTP client does — avoids desktop paste whitespace issues
+        val normalized = account.copy(
+            username = account.username.trim(),
+            httpPassword = account.httpPassword.trim(),
+            baseUrl = account.baseUrl.trim().trimEnd('/')
+        )
+        AppLog.i(
+            "Testing login for ${normalized.username} @ ${normalized.baseUrl} " +
+                "(userLen=${normalized.username.length} passLen=${normalized.httpPassword.length})"
+        )
         return try {
-            val client = GerritClientFactory.create(account)
-            val self = client.getSelf()
+            val client = GerritClientFactory.create(normalized)
+            val self = try {
+                client.getSelf()
+            } catch (e: retrofit2.HttpException) {
+                // Some old Gerrit builds are picky about the trailing slash on /accounts/self
+                if (e.code() == 404 || e.code() == 403) {
+                    AppLog.w("getSelf failed HTTP ${e.code()}; retrying with trailing slash")
+                    client.getSelfTrailingSlash()
+                } else {
+                    throw e
+                }
+            }
             AppLog.i("Login OK: ${self.displayName ?: self.name ?: self.username} (id=${self.accountId})")
             self
         } catch (e: Exception) {
-            AppLog.e("Login failed for ${account.username} @ ${account.baseUrl}", e)
+            AppLog.e("Login failed for ${normalized.username} @ ${normalized.baseUrl}", e)
             throw e
         }
     }
@@ -503,15 +522,14 @@ class GerritRepository(
 
     private fun decodeBase64Bytes(compact: String): ByteArray? {
         if (compact.isEmpty()) return ByteArray(0)
-        val cleaned = compact.filterNot { it.isWhitespace() }
-        val decoders = listOf(
-            java.util.Base64.getDecoder(),
-            java.util.Base64.getUrlDecoder(),
-            java.util.Base64.getMimeDecoder()
+        val flags = listOf(
+            android.util.Base64.DEFAULT,
+            android.util.Base64.NO_WRAP,
+            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
         )
-        for (dec in decoders) {
+        for (flag in flags) {
             try {
-                return dec.decode(cleaned)
+                return android.util.Base64.decode(compact, flag)
             } catch (_: Exception) {
             }
         }
