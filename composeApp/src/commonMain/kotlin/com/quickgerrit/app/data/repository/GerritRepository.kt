@@ -503,7 +503,7 @@ class GerritRepository(
 
     private fun decodeBase64Bytes(compact: String): ByteArray? {
         if (compact.isEmpty()) return ByteArray(0)
-        val cleaned = compact.replace("\s".toRegex(), "")
+        val cleaned = compact.filterNot { it.isWhitespace() }
         val decoders = listOf(
             java.util.Base64.getDecoder(),
             java.util.Base64.getUrlDecoder(),

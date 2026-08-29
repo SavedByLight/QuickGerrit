@@ -1,15 +1,22 @@
 package com.quickgerrit.app.ui.update
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -114,4 +121,119 @@ fun UpdateDialog(
             TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
+}
+
+/**
+ * Button used on the Accounts screen to manually check for updates.
+ */
+@Composable
+fun UpdateCheckButton(
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var update by remember { mutableStateOf<AppUpdater.UpdateInfo?>(null) }
+    var showDialog by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = {
+                if (!AppUpdater.isConfigured()) {
+                    status = "Update check not configured (GITHUB_REPO empty)"
+                    return@OutlinedButton
+                }
+                checking = true
+                status = null
+                scope.launch {
+                    val result = AppUpdater.checkForUpdate()
+                    checking = false
+                    result.fold(
+                        onSuccess = { info ->
+                            if (info == null) {
+                                status = "You're on the latest version (${AppConfig.VERSION_NAME})"
+                            } else {
+                                update = info
+                                showDialog = true
+                            }
+                        },
+                        onFailure = { e ->
+                            status = "Check failed: ${e.message}"
+                        }
+                    )
+                }
+            },
+            enabled = !checking,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (checking) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Checking…")
+            } else {
+                Icon(Icons.Default.SystemUpdate, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Check for updates")
+            }
+        }
+        status?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+
+    val info = update
+    if (showDialog && info != null) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Update available") },
+            text = {
+                Column {
+                    Text("Version ${info.versionName} is available (you have ${AppConfig.VERSION_NAME}).")
+                    Spacer(Modifier.height(8.dp))
+                    info.releaseNotes?.takeIf { it.isNotBlank() }?.let {
+                        Text(it.take(1000), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppUpdater.openUpdate(info)
+                    showDialog = false
+                }) { Text("Download") }
+            },
+            dismissButton = {
+                Row {
+                    info.htmlUrl?.let { url ->
+                        TextButton(onClick = {
+                            com.quickgerrit.app.platform.openUrl(url)
+                        }) { Text("View on GitHub") }
+                    }
+                    TextButton(onClick = { showDialog = false }) { Text("Later") }
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Silently checks for updates once per process (e.g. from main screen).
+ * Calls [onUpdateAvailable] when a newer release exists.
+ */
+@Composable
+fun AutoUpdateChecker(
+    onUpdateAvailable: (AppUpdater.UpdateInfo) -> Unit = {}
+) {
+    var checked by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (checked || !AppUpdater.isConfigured()) return@LaunchedEffect
+        checked = true
+        val result = AppUpdater.checkForUpdate()
+        result.getOrNull()?.let { onUpdateAvailable(it) }
+    }
 }
