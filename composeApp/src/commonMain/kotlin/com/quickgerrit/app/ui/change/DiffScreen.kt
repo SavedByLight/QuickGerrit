@@ -1,14 +1,14 @@
 package com.quickgerrit.app.ui.change
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -127,6 +127,67 @@ private fun LanguageChip(filePath: String, colors: CodeColors) {
     }
 }
 
+/** Flattened line for unified or side-by-side rendering. */
+@Immutable
+private data class FlatDiffLine(
+    val text: String,
+    val type: DiffLineType,
+    val index: Int
+)
+
+private fun flattenUnified(content: List<DiffContent>): List<FlatDiffLine> {
+    val out = ArrayList<FlatDiffLine>(256)
+    var idx = 0
+    for (block in content) {
+        when {
+            block.ab != null -> {
+                for (line in block.ab) {
+                    out.add(FlatDiffLine(line, DiffLineType.CONTEXT, idx++))
+                }
+            }
+            else -> {
+                block.a?.forEach { line ->
+                    out.add(FlatDiffLine(line, DiffLineType.REMOVED, idx++))
+                }
+                block.b?.forEach { line ->
+                    out.add(FlatDiffLine(line, DiffLineType.ADDED, idx++))
+                }
+            }
+        }
+    }
+    return out
+}
+
+private fun flattenSideBySide(content: List<DiffContent>): Pair<List<FlatDiffLine>, List<FlatDiffLine>> {
+    val left = ArrayList<FlatDiffLine>(256)
+    val right = ArrayList<FlatDiffLine>(256)
+    var idx = 0
+    for (block in content) {
+        when {
+            block.ab != null -> {
+                for (line in block.ab) {
+                    left.add(FlatDiffLine(line, DiffLineType.CONTEXT, idx))
+                    right.add(FlatDiffLine(line, DiffLineType.CONTEXT, idx))
+                    idx++
+                }
+            }
+            else -> {
+                val a = block.a.orEmpty()
+                val b = block.b.orEmpty()
+                val max = maxOf(a.size, b.size)
+                for (i in 0 until max) {
+                    if (i < a.size) left.add(FlatDiffLine(a[i], DiffLineType.REMOVED, idx))
+                    else left.add(FlatDiffLine("", DiffLineType.EMPTY, idx))
+                    if (i < b.size) right.add(FlatDiffLine(b[i], DiffLineType.ADDED, idx))
+                    else right.add(FlatDiffLine("", DiffLineType.EMPTY, idx))
+                    idx++
+                }
+            }
+        }
+    }
+    return left to right
+}
+
 @Composable
 private fun UnifiedDiffView(
     content: List<DiffContent>,
@@ -134,27 +195,22 @@ private fun UnifiedDiffView(
     syntax: SyntaxColors,
     language: SourceLanguage
 ) {
-    val scroll = rememberScrollState()
-    val hScroll = rememberScrollState()
-    Column(
+    val lines = remember(content) { flattenUnified(content) }
+
+    // LazyColumn only composes visible lines → smooth scrolling even for multi-thousand-line diffs.
+    // softWrap=false keeps monospace alignment; very long lines may clip (use Edit or side-by-side).
+    LazyColumn(
         Modifier
             .fillMaxSize()
-            .verticalScroll(scroll)
-            .horizontalScroll(hScroll)
-            .padding(8.dp)
+            .padding(8.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        content.forEach { block ->
-            when {
-                block.ab != null -> {
-                    block.ab.forEach { line ->
-                        DiffLine(line, DiffLineType.CONTEXT, colors, syntax, language)
-                    }
-                }
-                else -> {
-                    block.a?.forEach { line -> DiffLine(line, DiffLineType.REMOVED, colors, syntax, language) }
-                    block.b?.forEach { line -> DiffLine(line, DiffLineType.ADDED, colors, syntax, language) }
-                }
-            }
+        itemsIndexed(
+            items = lines,
+            key = { _, line -> line.index },
+            contentType = { _, line -> line.type }
+        ) { _, line ->
+            DiffLine(line.text, line.type, colors, syntax, language)
         }
     }
 }
@@ -166,48 +222,44 @@ private fun SideBySideDiffView(
     syntax: SyntaxColors,
     language: SourceLanguage
 ) {
-    val scroll = rememberScrollState()
-    Row(
+    val (left, right) = remember(content) { flattenSideBySide(content) }
+
+    // Shared vertical scroll via two LazyColumns is hard; use a single LazyColumn of pairs.
+    LazyColumn(
         Modifier
             .fillMaxSize()
-            .verticalScroll(scroll)
-            .padding(4.dp)
+            .padding(4.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        Column(Modifier.weight(1f)) {
-            content.forEach { block ->
-                when {
-                    block.ab != null -> block.ab.forEach {
-                        DiffLine(it, DiffLineType.CONTEXT, colors, syntax, language, compact = true)
-                    }
-                    else -> {
-                        val a = block.a.orEmpty()
-                        val b = block.b.orEmpty()
-                        val max = maxOf(a.size, b.size)
-                        for (i in 0 until max) {
-                            if (i < a.size) DiffLine(a[i], DiffLineType.REMOVED, colors, syntax, language, compact = true)
-                            else DiffLine("", DiffLineType.EMPTY, colors, syntax, language, compact = true)
-                        }
-                    }
-                }
-            }
-        }
-        VerticalDivider()
-        Column(Modifier.weight(1f)) {
-            content.forEach { block ->
-                when {
-                    block.ab != null -> block.ab.forEach {
-                        DiffLine(it, DiffLineType.CONTEXT, colors, syntax, language, compact = true)
-                    }
-                    else -> {
-                        val a = block.a.orEmpty()
-                        val b = block.b.orEmpty()
-                        val max = maxOf(a.size, b.size)
-                        for (i in 0 until max) {
-                            if (i < b.size) DiffLine(b[i], DiffLineType.ADDED, colors, syntax, language, compact = true)
-                            else DiffLine("", DiffLineType.EMPTY, colors, syntax, language, compact = true)
-                        }
-                    }
-                }
+        itemsIndexed(
+            items = left,
+            key = { _, line -> line.index },
+            contentType = { _, line -> line.type }
+        ) { i, leftLine ->
+            val rightLine = right.getOrNull(i) ?: FlatDiffLine("", DiffLineType.EMPTY, leftLine.index)
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DiffLine(
+                    leftLine.text,
+                    leftLine.type,
+                    colors,
+                    syntax,
+                    language,
+                    compact = true,
+                    modifier = Modifier.weight(1f)
+                )
+                VerticalDivider()
+                DiffLine(
+                    rightLine.text,
+                    rightLine.type,
+                    colors,
+                    syntax,
+                    language,
+                    compact = true,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
@@ -222,7 +274,8 @@ private fun DiffLine(
     colors: CodeColors,
     syntax: SyntaxColors,
     language: SourceLanguage,
-    compact: Boolean = false
+    compact: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val bg = when (type) {
         DiffLineType.ADDED -> colors.addedBg
@@ -242,7 +295,8 @@ private fun DiffLine(
         else -> "  "
     }
 
-    val highlighted = remember(text, language, syntax) {
+    // Highlight is memoized per line; LazyColumn only composes visible rows.
+    val highlighted = remember(text, language, syntax, type) {
         if (text.isEmpty() || type == DiffLineType.EMPTY) AnnotatedString("")
         else highlightSyntax(text, language, syntax)
     }
@@ -260,7 +314,9 @@ private fun DiffLine(
         text = line,
         fontFamily = FontFamily.Monospace,
         fontSize = if (compact) 11.sp else 12.sp,
-        modifier = Modifier
+        softWrap = false,
+        maxLines = 1,
+        modifier = modifier
             .fillMaxWidth()
             .background(bg)
             .padding(horizontal = 4.dp, vertical = 1.dp),

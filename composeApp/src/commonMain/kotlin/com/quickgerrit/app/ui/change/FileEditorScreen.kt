@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +56,7 @@ import com.quickgerrit.app.ui.theme.highlightSyntax
 import com.quickgerrit.app.ui.theme.languageFromPath
 import com.quickgerrit.app.ui.theme.rememberCodeColors
 import com.quickgerrit.app.ui.theme.rememberSyntaxColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -90,7 +92,7 @@ fun FileEditorScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    // Keep [content] in sync with the TextFieldState for dirty checks / save / highlight
+    // Keep [content] in sync with the TextFieldState for dirty checks / save
     LaunchedEffect(textState) {
         snapshotFlow { textState.text.toString() }
             .distinctUntilChanged()
@@ -101,8 +103,22 @@ fun FileEditorScreen(
     val codeColors = rememberCodeColors()
     val syntaxColors = rememberSyntaxColors()
     val language = remember(filePath) { languageFromPath(filePath) }
-    val highlighted = remember(content, language, syntaxColors) {
-        highlightSyntax(content, language, syntaxColors)
+
+    // Debounce syntax highlighting so typing stays smooth (re-highlight ~120ms after last change).
+    // Without this, every keystroke re-tokenizes the full buffer and causes lag/jitter.
+    var highlighted by remember { mutableStateOf(AnnotatedString("")) }
+    LaunchedEffect(content, language, syntaxColors) {
+        if (content.isEmpty()) {
+            highlighted = AnnotatedString("")
+            return@LaunchedEffect
+        }
+        // Immediate cheap update for small files; debounce for larger ones
+        if (content.length < 4_000) {
+            highlighted = highlightSyntax(content, language, syntaxColors)
+        } else {
+            delay(120)
+            highlighted = highlightSyntax(content, language, syntaxColors)
+        }
     }
 
     LaunchedEffect(changeId, revisionId, filePath, project, branch) {

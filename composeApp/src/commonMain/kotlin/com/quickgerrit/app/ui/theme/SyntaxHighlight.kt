@@ -160,7 +160,13 @@ fun highlightSyntax(
 private fun kw(vararg words: String): String =
     words.joinToString("|") { Regex.escape(it) }
 
-private fun rulesFor(language: SourceLanguage): List<Rule> = when (language) {
+// Cache compiled rule lists — rulesFor is pure and the language set is small.
+private val rulesCache = mutableMapOf<SourceLanguage, List<Rule>>()
+
+private fun rulesFor(language: SourceLanguage): List<Rule> =
+    rulesCache.getOrPut(language) { buildRulesFor(language) }
+
+private fun buildRulesFor(language: SourceLanguage): List<Rule> = when (language) {
     SourceLanguage.KOTLIN -> listOf(
         Rule(Regex("""//.*""")) { SpanStyle(color = it.comment, fontStyle = FontStyle.Italic) },
         Rule(Regex("""/\*[\s\S]*?\*/""")) { SpanStyle(color = it.comment, fontStyle = FontStyle.Italic) },
