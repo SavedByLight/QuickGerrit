@@ -128,7 +128,7 @@ fun QuickGerritNavGraph() {
             route = Screen.ChangeDetail.route,
             arguments = listOf(navArgument("changeId") { type = NavType.StringType })
         ) { entry ->
-            val changeId = java.net.URLDecoder.decode(entry.arguments?.getString("changeId") ?: "", "UTF-8")
+            val changeId = entry.arguments?.getString("changeId") ?: ""
             val vm: ChangeDetailViewModel = viewModel(factory = ChangeDetailViewModel.Factory(repo, changeId))
             ChangeDetailScreen(
                 viewModel = vm,
@@ -151,9 +151,9 @@ fun QuickGerritNavGraph() {
                 navArgument("filePath") { type = NavType.StringType }
             )
         ) { entry ->
-            val changeId = java.net.URLDecoder.decode(entry.arguments?.getString("changeId") ?: "", "UTF-8")
+            val changeId = entry.arguments?.getString("changeId") ?: ""
             val revisionId = entry.arguments?.getString("revisionId") ?: "current"
-            val filePath = java.net.URLDecoder.decode(entry.arguments?.getString("filePath") ?: "", "UTF-8")
+            val filePath = entry.arguments?.getString("filePath") ?: ""
             DiffScreen(
                 changeId = changeId,
                 revisionId = revisionId,
@@ -176,12 +176,14 @@ fun QuickGerritNavGraph() {
                 navArgument("filePath") { type = NavType.StringType }
             )
         ) { entry ->
-            val dec = { s: String? -> java.net.URLDecoder.decode(s ?: "", "UTF-8") }
-            val changeId = dec(entry.arguments?.getString("changeId"))
-            val revisionId = dec(entry.arguments?.getString("revisionId")).ifBlank { "current" }
-            val project = dec(entry.arguments?.getString("project")).let { if (it == "_") "" else it }
-            val branch = dec(entry.arguments?.getString("branch")).ifBlank { "master" }
-            val filePath = dec(entry.arguments?.getString("filePath"))
+            // NavType.StringType already URL-decodes once. Do not decode changeId again
+            // (Gerrit ids use %2F for project slashes; a second decode turns them into '/' and
+            // breaks /a/changes/{id}/...). project/filePath should be fully decoded paths.
+            val changeId = entry.arguments?.getString("changeId") ?: ""
+            val revisionId = (entry.arguments?.getString("revisionId") ?: "").ifBlank { "current" }
+            val project = (entry.arguments?.getString("project") ?: "").let { if (it == "_") "" else it }
+            val branch = (entry.arguments?.getString("branch") ?: "").ifBlank { "master" }
+            val filePath = entry.arguments?.getString("filePath") ?: ""
             FileEditorScreen(
                 changeId = changeId,
                 revisionId = revisionId,

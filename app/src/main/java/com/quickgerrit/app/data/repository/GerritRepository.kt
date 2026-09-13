@@ -106,7 +106,7 @@ class GerritRepository(
     suspend fun getChangeDetail(changeId: String): ChangeInfo {
         AppLog.d("getChangeDetail $changeId")
         return try {
-            val detail = api().getChangeDetail(changeId)
+            val detail = api().getChangeDetail(encodeGerritChangeId(changeId))
             AppLog.d("getChangeDetail OK: ${detail.subject} status=${detail.status}")
             detail
         } catch (e: Exception) {
@@ -118,7 +118,7 @@ class GerritRepository(
     suspend fun listFiles(changeId: String, revisionId: String): Map<String, FileInfo> {
         AppLog.d("listFiles change=$changeId rev=$revisionId")
         return try {
-            val files = api().listFiles(changeId, revisionId)
+            val files = api().listFiles(encodeGerritChangeId(changeId), revisionId)
             AppLog.d("listFiles returned ${files.size} files")
             files
         } catch (e: Exception) {
@@ -137,7 +137,7 @@ class GerritRepository(
         if (q.isEmpty()) return emptyList()
         AppLog.d("searchRevisionFiles change=$changeId rev=$revisionId q='$q'")
         return try {
-            api().searchRevisionFiles(changeId, revisionId, q)
+            api().searchRevisionFiles(encodeGerritChangeId(changeId), revisionId, q)
                 .filter { it != "/COMMIT_MSG" && it != "/MERGE_LIST" }
                 .sorted()
         } catch (e: Exception) {
@@ -152,7 +152,7 @@ class GerritRepository(
         val encodedFileId = encodeGerritFileId(filePath)
         AppLog.d("getDiff $changeId/$revisionId path=$filePath encoded=$encodedFileId")
         return try {
-            api().getDiff(changeId, revisionId, encodedFileId)
+            api().getDiff(encodeGerritChangeId(changeId), revisionId, encodedFileId)
         } catch (e: Exception) {
             AppLog.e("getDiff failed for $filePath", e)
             throw e
@@ -171,10 +171,26 @@ class GerritRepository(
         }
     }
 
+    /**
+     * Encode a Gerrit change id for use in /a/changes/{changeId}/... paths.
+     *
+     * Gerrit change ids are typically "{project}~{number}" (or a triplet). Project
+     * names often contain '/', which must appear as %2F in the path. The list API
+     * already returns id with %2F escaped; navigation may further decode it back to
+     * '/'. This normalizes both forms so @Path(encoded = true) receives a safe value.
+     *
+     * Numeric ids (e.g. "502047") are left unchanged.
+     */
+    private fun encodeGerritChangeId(changeId: String): String {
+        if (changeId.isEmpty() || !changeId.contains('/')) return changeId
+        // Only encode literal '/' — leave any existing %xx sequences alone.
+        return changeId.replace("/", "%2F")
+    }
+
     suspend fun listComments(changeId: String): Map<String, List<CommentInfo>> {
         AppLog.d("listComments $changeId")
         return try {
-            api().listComments(changeId)
+            api().listComments(encodeGerritChangeId(changeId))
         } catch (e: Exception) {
             AppLog.e("listComments failed for $changeId", e)
             throw e
@@ -184,7 +200,7 @@ class GerritRepository(
     suspend fun listDrafts(changeId: String): Map<String, List<CommentInfo>> {
         AppLog.d("listDrafts $changeId")
         return try {
-            api().listDrafts(changeId)
+            api().listDrafts(encodeGerritChangeId(changeId))
         } catch (e: Exception) {
             AppLog.e("listDrafts failed for $changeId", e)
             throw e
@@ -194,7 +210,7 @@ class GerritRepository(
     suspend fun setReview(changeId: String, revisionId: String, input: ReviewInput) {
         AppLog.i("setReview change=$changeId rev=$revisionId labels=${input.labels} message=${input.message?.take(40)}")
         try {
-            val resp = api().setReview(changeId, revisionId, input)
+            val resp = api().setReview(encodeGerritChangeId(changeId), revisionId, input)
             if (!resp.isSuccessful) {
                 throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
             }
@@ -208,7 +224,7 @@ class GerritRepository(
     suspend fun abandon(changeId: String, message: String = ""): ChangeInfo {
         AppLog.i("abandon $changeId")
         return try {
-            api().abandon(changeId, if (message.isBlank()) emptyMap() else mapOf("message" to message)).also {
+            api().abandon(encodeGerritChangeId(changeId), if (message.isBlank()) emptyMap() else mapOf("message" to message)).also {
                 AppLog.i("abandon succeeded")
             }
         } catch (e: Exception) {
@@ -220,7 +236,7 @@ class GerritRepository(
     suspend fun restore(changeId: String, message: String = ""): ChangeInfo {
         AppLog.i("restore $changeId")
         return try {
-            api().restore(changeId, if (message.isBlank()) emptyMap() else mapOf("message" to message)).also {
+            api().restore(encodeGerritChangeId(changeId), if (message.isBlank()) emptyMap() else mapOf("message" to message)).also {
                 AppLog.i("restore succeeded")
             }
         } catch (e: Exception) {
@@ -236,7 +252,7 @@ class GerritRepository(
     suspend fun submit(changeId: String, waitForMerge: Boolean = true): ChangeInfo {
         AppLog.i("submit (merge) $changeId waitForMerge=$waitForMerge")
         return try {
-            api().submit(changeId, SubmitInput(waitForMerge = waitForMerge)).also {
+            api().submit(encodeGerritChangeId(changeId), SubmitInput(waitForMerge = waitForMerge)).also {
                 AppLog.i("submit (merge) OK status=${it.status}")
             }
         } catch (e: Exception) {
@@ -306,7 +322,7 @@ class GerritRepository(
         AppLog.i("setWorkInProgress $changeId")
         try {
             val resp = api().setWorkInProgress(
-                changeId,
+                encodeGerritChangeId(changeId),
                 if (message.isBlank()) emptyMap() else mapOf("message" to message)
             )
             if (!resp.isSuccessful) {
@@ -323,7 +339,7 @@ class GerritRepository(
         AppLog.i("setReadyForReview $changeId")
         try {
             val resp = api().setReadyForReview(
-                changeId,
+                encodeGerritChangeId(changeId),
                 if (message.isBlank()) emptyMap() else mapOf("message" to message)
             )
             if (!resp.isSuccessful) {
@@ -562,7 +578,7 @@ class GerritRepository(
         val encoded = encodeGerritFileId(filePath)
         AppLog.d("getFileContent $changeId/$revisionId path=$filePath")
         return try {
-            val resp = api().getFileContent(changeId, revisionId, encoded)
+            val resp = api().getFileContent(encodeGerritChangeId(changeId), revisionId, encoded)
             parseFileContentResponse(resp, filePath)
         } catch (e: Exception) {
             AppLog.e("getFileContent failed for $filePath", e)
@@ -696,7 +712,7 @@ class GerritRepository(
         try {
             val mediaType = "text/plain; charset=UTF-8".toMediaType()
             val body = content.toRequestBody(mediaType)
-            val resp = api().putEditFile(changeId, encoded, body)
+            val resp = api().putEditFile(encodeGerritChangeId(changeId), encoded, body)
             if (!resp.isSuccessful) {
                 val err = resp.errorBody()?.string().orEmpty().trim()
                 // Gerrit: identical content → 409 "no changes were made"
@@ -724,7 +740,7 @@ class GerritRepository(
     /** True if Gerrit currently has an open change-edit for this change. */
     suspend fun hasEdit(changeId: String): Boolean {
         return try {
-            val resp = api().getEdit(changeId)
+            val resp = api().getEdit(encodeGerritChangeId(changeId))
             // 200 = edit exists; 204/404 = none
             val exists = resp.isSuccessful && resp.code() != 204 && resp.body() != null
             AppLog.d("hasEdit $changeId → $exists (HTTP ${resp.code()})")
@@ -744,7 +760,7 @@ class GerritRepository(
                     "No open change edit to publish. Save a file or change the commit message first."
                 )
             }
-            val resp = api().publishEdit(changeId)
+            val resp = api().publishEdit(encodeGerritChangeId(changeId))
             // 204 No Content is success
             if (!resp.isSuccessful) {
                 throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
@@ -761,7 +777,7 @@ class GerritRepository(
     suspend fun deleteEdit(changeId: String) {
         AppLog.i("deleteEdit $changeId")
         try {
-            val resp = api().deleteEdit(changeId)
+            val resp = api().deleteEdit(encodeGerritChangeId(changeId))
             if (!resp.isSuccessful) {
                 throw Exception("HTTP ${resp.code()} ${resp.errorBody()?.string().orEmpty().take(300)}")
             }
@@ -775,7 +791,7 @@ class GerritRepository(
     suspend fun setTopic(changeId: String, topic: String) {
         AppLog.i("setTopic $changeId → $topic")
         try {
-            api().setTopic(changeId, mapOf("topic" to topic))
+            api().setTopic(encodeGerritChangeId(changeId), mapOf("topic" to topic))
             AppLog.i("setTopic OK")
         } catch (e: Exception) {
             AppLog.e("setTopic failed", e)
@@ -792,7 +808,7 @@ class GerritRepository(
     suspend fun putEditMessage(changeId: String, message: String): Boolean {
         AppLog.i("putEditMessage $changeId")
         try {
-            val resp = api().putEditMessage(changeId, mapOf("message" to message))
+            val resp = api().putEditMessage(encodeGerritChangeId(changeId), mapOf("message" to message))
             // 204 No Content = success (message applied / edit created)
             if (!resp.isSuccessful) {
                 val err = resp.errorBody()?.string().orEmpty()
