@@ -20,6 +20,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 enum class LogLevel { V, D, I, W, E }
 
 data class LogEntry(
+    /** Monotonic unique id for LazyColumn keys (time+message alone can collide). */
+    val id: Long,
     val timeMillis: Long,
     val level: LogLevel,
     val tag: String,
@@ -49,6 +51,9 @@ object AppLog {
     private val buffer = CopyOnWriteArrayList<LogEntry>()
     private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
     val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
+
+    /** Guarantees unique LazyColumn keys even when several lines share the same ms + text. */
+    private val nextId = java.util.concurrent.atomic.AtomicLong(1L)
 
     fun v(message: String, tag: String = TAG) {
         if (BuildConfig.DEBUG) {
@@ -168,6 +173,7 @@ object AppLog {
         // Cap message size so huge HTTP dumps cannot freeze the UI / export
         val msg = if (message.length > 2_000) message.take(2_000) + "…" else message
         val entry = LogEntry(
+            id = nextId.getAndIncrement(),
             timeMillis = System.currentTimeMillis(),
             level = level,
             tag = tag,

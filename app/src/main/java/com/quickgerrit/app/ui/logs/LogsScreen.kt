@@ -195,7 +195,7 @@ fun LogsScreen(onBack: () -> Unit) {
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        items(filtered, key = { "${it.timeMillis}-${it.message.hashCode()}" }) { entry ->
+                        items(filtered, key = { it.id }) { entry ->
                             LogRow(entry)
                         }
                     }
