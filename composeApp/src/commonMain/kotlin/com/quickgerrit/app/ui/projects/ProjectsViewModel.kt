@@ -17,7 +17,10 @@ data class ProjectsUiState(
     val error: String? = null,
     val filter: String = "",
     val creating: Boolean = false,
-    val createError: String? = null
+    val createError: String? = null,
+    /** Creating a new project/repo (not a change). */
+    val creatingProject: Boolean = false,
+    val createProjectError: String? = null
 )
 
 class ProjectsViewModel(private val repo: GerritRepository) : PlatformViewModel() {
@@ -56,6 +59,59 @@ class ProjectsViewModel(private val repo: GerritRepository) : PlatformViewModel(
 
     fun clearCreateResult() {
         _ui.update { it.copy(createError = null) }
+    }
+
+    fun clearCreateProjectResult() {
+        _ui.update { it.copy(createProjectError = null) }
+    }
+
+    /**
+     * Create a new Gerrit project/repository when the user has permission.
+     * On success, refreshes the project list and invokes [onSuccess] with the project name.
+     */
+    fun createProject(
+        name: String,
+        description: String = "",
+        parent: String = "",
+        createEmptyCommit: Boolean = true,
+        initialBranch: String = "master",
+        onSuccess: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _ui.update { it.copy(creatingProject = true, createProjectError = null) }
+            try {
+                val branches = initialBranch.trim()
+                    .takeIf { it.isNotBlank() }
+                    ?.let { listOf(it.removePrefix("refs/heads/")) }
+                val created = repo.createProject(
+                    name = name,
+                    description = description,
+                    parent = parent.ifBlank { null },
+                    createEmptyCommit = createEmptyCommit,
+                    branches = branches
+                )
+                val projectName = created.name.ifBlank { created.id.ifBlank { name.trim() } }
+                // Refresh list so the new project appears
+                load()
+                _ui.update { it.copy(creatingProject = false) }
+                onSuccess(projectName)
+            } catch (e: Exception) {
+                AppLog.e("createProject failed", e)
+                val msg = e.message.orEmpty()
+                val friendly = when {
+                    msg.contains("403") || msg.contains("Forbidden", ignoreCase = true) ->
+                        "Permission denied — you need the Create Project capability on this server."
+                    msg.contains("409") || msg.contains("already exists", ignoreCase = true) ->
+                        "A project with that name already exists."
+                    msg.contains("400") ->
+                        "Invalid project name or options. Check the name and try again."
+                    else -> e.message ?: "Create project failed"
+                }
+                _ui.update {
+                    it.copy(creatingProject = false, createProjectError = friendly)
+                }
+            }
+        }
     }
 
     fun createChange(

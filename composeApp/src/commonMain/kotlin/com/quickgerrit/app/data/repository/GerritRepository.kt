@@ -349,6 +349,45 @@ class GerritRepository(
         }
     }
 
+    /**
+     * Create a new Gerrit project/repository.
+     * Succeeds only when the authenticated user has the Create Project capability.
+     *
+     * @param name project name (path segments allowed, e.g. "team/my-repo")
+     * @param description optional description
+     * @param parent parent project (null → server default, usually All-Projects)
+     * @param createEmptyCommit if true, create an empty initial commit so branches exist
+     * @param branches optional list of initial branch short names (e.g. ["main"])
+     */
+    suspend fun createProject(
+        name: String,
+        description: String? = null,
+        parent: String? = null,
+        createEmptyCommit: Boolean = true,
+        branches: List<String>? = null
+    ): ProjectInfo {
+        val projectName = name.trim().trim('/')
+        require(projectName.isNotBlank()) { "Project name is required" }
+        val proj = encodeGerritFileId(projectName)
+        val input = ProjectInput(
+            name = projectName,
+            parent = parent?.trim()?.ifBlank { null },
+            description = description?.trim()?.ifBlank { null },
+            createEmptyCommit = createEmptyCommit,
+            branches = branches?.map { it.trim().removePrefix("refs/heads/") }?.filter { it.isNotBlank() }
+                ?.takeIf { it.isNotEmpty() }
+        )
+        AppLog.d("createProject name=$projectName parent=${input.parent} emptyCommit=$createEmptyCommit")
+        return try {
+            api().createProject(proj, input).also {
+                AppLog.i("createProject OK id=${it.id.ifBlank { projectName }} name=${it.name.ifBlank { projectName }}")
+            }
+        } catch (e: Exception) {
+            AppLog.e("createProject failed for $projectName", e)
+            throw Exception(httpErrorDetail(e), e)
+        }
+    }
+
     suspend fun listBranches(project: String): List<BranchInfo> {
         val proj = encodeGerritFileId(project.trim())
         AppLog.d("listBranches project=$project encoded=$proj")

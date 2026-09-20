@@ -153,6 +153,17 @@ interface GerritApi {
         @Body input: BranchInput
     ): BranchInfo
 
+    /**
+     * Create a new project/repository.
+     * Requires the Create Project capability (or Administrate Server).
+     * Returns 201 + [ProjectInfo] on success; 409 if the name already exists.
+     */
+    @PUT("a/projects/{project}")
+    suspend fun createProject(
+        @Path("project", encoded = true) project: String,
+        @Body input: ProjectInput
+    ): ProjectInfo
+
     // —— File content & change edit (in-app editor) ——
 
     /** File content is base64-encoded plain text (or binary). */

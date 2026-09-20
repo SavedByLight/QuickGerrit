@@ -37,6 +37,7 @@ fun ProjectsScreen(
 
     // Project selected for creating a change (null = dialog closed)
     var createForProject by remember { mutableStateOf<String?>(null) }
+    var showCreateProject by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -53,6 +54,16 @@ fun ProjectsScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    viewModel.clearCreateProjectResult()
+                    showCreateProject = true
+                }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Create repository")
+            }
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -123,6 +134,31 @@ fun ProjectsScreen(
             }
         )
     }
+
+    if (showCreateProject) {
+        CreateProjectDialog(
+            creating = state.creatingProject,
+            error = state.createProjectError,
+            onDismiss = {
+                if (!state.creatingProject) {
+                    showCreateProject = false
+                    viewModel.clearCreateProjectResult()
+                }
+            },
+            onCreate = { name, description, parent, emptyCommit, branch ->
+                viewModel.createProject(
+                    name = name,
+                    description = description,
+                    parent = parent,
+                    createEmptyCommit = emptyCommit,
+                    initialBranch = branch
+                ) {
+                    showCreateProject = false
+                    viewModel.clearCreateProjectResult()
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -165,6 +201,114 @@ private fun ProjectCard(
             }
         }
     }
+}
+
+@Composable
+private fun CreateProjectDialog(
+    creating: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onCreate: (
+        name: String,
+        description: String,
+        parent: String,
+        createEmptyCommit: Boolean,
+        initialBranch: String
+    ) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var parent by remember { mutableStateOf("") }
+    var initialBranch by remember { mutableStateOf("master") }
+    var createEmptyCommit by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = { if (!creating) onDismiss() },
+        title = { Text("Create repository") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Requires Create Project permission on the Gerrit server. " +
+                        "If you lack it, creation will fail with a clear error.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Project name *") },
+                    placeholder = { Text("e.g. team/my-repo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating,
+                    minLines = 2
+                )
+                OutlinedTextField(
+                    value = parent,
+                    onValueChange = { parent = it },
+                    label = { Text("Parent (optional)") },
+                    placeholder = { Text("All-Projects") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating
+                )
+                OutlinedTextField(
+                    value = initialBranch,
+                    onValueChange = { initialBranch = it },
+                    label = { Text("Initial branch") },
+                    placeholder = { Text("master or main") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !creating
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = createEmptyCommit,
+                        onCheckedChange = { createEmptyCommit = it },
+                        enabled = !creating
+                    )
+                    Text("Create empty initial commit")
+                }
+                error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onCreate(
+                        name.trim(),
+                        description,
+                        parent,
+                        createEmptyCommit,
+                        initialBranch
+                    )
+                },
+                enabled = !creating && name.isNotBlank()
+            ) {
+                if (creating) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Create")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !creating) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable

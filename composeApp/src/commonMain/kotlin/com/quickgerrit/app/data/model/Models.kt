@@ -166,6 +166,30 @@ data class BranchInput(
     val revision: String
 )
 
+/**
+ * Body for PUT /a/projects/{project} — create a new project/repository.
+ * Only fields that are widely supported across Gerrit versions are included.
+ * Requires Create Project (or Administrate Server) capability on the server.
+ */
+@Serializable
+data class ProjectInput(
+    /** Optional display name; path segment is authoritative. */
+    val name: String? = null,
+    /** Parent project (default All-Projects when omitted). */
+    val parent: String? = null,
+    val description: String? = null,
+    /** When true, create an initial empty commit so HEAD exists. */
+    @SerialName("create_empty_commit") val createEmptyCommit: Boolean? = true,
+    /**
+     * Initial branch names (without refs/heads/). If omitted, Gerrit uses its default
+     * (often "master" or the server default branch).
+     */
+    val branches: List<String>? = null,
+    /** e.g. MERGE_IF_NECESSARY, REBASE_IF_NECESSARY, FAST_FORWARD_ONLY, … */
+    @SerialName("submit_type") val submitType: String? = null,
+    @SerialName("permissions_only") val permissionsOnly: Boolean? = null
+)
+
 @Serializable
 data class WebLinkInfo(
     val name: String? = null,
