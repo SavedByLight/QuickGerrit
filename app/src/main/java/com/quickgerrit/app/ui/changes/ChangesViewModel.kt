@@ -8,6 +8,8 @@ import com.quickgerrit.app.data.model.ChangeInput
 import com.quickgerrit.app.data.model.GerritAccount
 import com.quickgerrit.app.data.repository.GerritRepository
 import com.quickgerrit.app.util.AppLog
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,10 +43,36 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
 
     companion object {
         const val PAGE_SIZE = 100
+        /** Delay before live-search fires so typing stays smooth. */
+        const val SEARCH_DEBOUNCE_MS = 350L
+
+        /** Common Gerrit query operators / templates for autocomplete suggestions. */
+        val QUERY_SUGGESTIONS: List<String> = listOf(
+            "owner:self",
+            "owner:self is:open",
+            "reviewer:self",
+            "is:wip",
+            "is:starred",
+            "is:mergeable",
+            "project:",
+            "branch:",
+            "topic:",
+            "message:",
+            "file:",
+            "label:Code-Review=+2",
+            "label:Verified=+1",
+            "status:open",
+            "after:2024-01-01",
+            "-is:wip",
+            "hashtag:"
+        )
     }
 
     private val _ui = MutableStateFlow(ChangesUiState())
     val ui: StateFlow<ChangesUiState> = _ui.asStateFlow()
+
+    /** Cancels in-flight debounced search when the query changes again. */
+    private var searchJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -68,6 +96,7 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
         AppLog.d("selectTab ${tab.label}")
         // Clear previous results so the loading indicator appears immediately
         // and stale data from another status is not shown while the new query runs.
+        searchJob?.cancel()
         _ui.update {
             it.copy(
                 tab = tab,
@@ -81,8 +110,23 @@ class ChangesViewModel(private val repo: GerritRepository) : ViewModel() {
         load()
     }
 
+    /**
+     * Updates the search query and debounces a live reload so results refresh
+     * while the user types (no need to press the search icon).
+     */
     fun setSearch(q: String) {
         _ui.update { it.copy(search = q) }
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            load()
+        }
+    }
+
+    /** Immediate search (e.g. suggestion picked or explicit refresh). */
+    fun searchNow() {
+        searchJob?.cancel()
+        load()
     }
 
     /** Fresh load from start (tab change, refresh, search). */

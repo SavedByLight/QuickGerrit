@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -134,21 +135,83 @@ fun ChangesScreen(
                 }
             }
 
-            // Search
-            OutlinedTextField(
-                value = state.search,
-                onValueChange = { viewModel.setSearch(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Extra query (owner:self, project:…)") },
-                singleLine = true,
-                trailingIcon = {
-                    IconButton(onClick = { viewModel.load() }) {
-                        Icon(Icons.Default.Search, null)
+            // Live search with operator suggestions (refreshes while typing)
+            var searchFocused by remember { mutableStateOf(false) }
+            val suggestions = remember(state.search) {
+                val q = state.search.trim().lowercase()
+                if (q.isEmpty()) ChangesViewModel.QUERY_SUGGESTIONS.take(8)
+                else ChangesViewModel.QUERY_SUGGESTIONS.filter {
+                    it.lowercase().contains(q) || q.contains(it.lowercase().substringBefore(':'))
+                }.take(8)
+            }
+            val showSuggestions = searchFocused && suggestions.isNotEmpty() &&
+                (state.search.isBlank() || suggestions.any { !it.equals(state.search, ignoreCase = true) })
+
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                OutlinedTextField(
+                    value = state.search,
+                    onValueChange = { viewModel.setSearch(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { searchFocused = it.isFocused },
+                    placeholder = { Text("Search query (live) — e.g. owner:self, project:…") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        Row {
+                            if (state.isLoading && state.changes.isNotEmpty()) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .align(Alignment.CenterVertically),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            if (state.search.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    viewModel.setSearch("")
+                                    viewModel.searchNow()
+                                }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                                }
+                            } else {
+                                IconButton(onClick = { viewModel.searchNow() }) {
+                                    Icon(Icons.Default.Search, contentDescription = "Search now")
+                                }
+                            }
+                        }
+                    }
+                )
+                if (showSuggestions) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Column {
+                            suggestions.forEach { suggestion ->
+                                Text(
+                                    text = suggestion,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.setSearch(suggestion)
+                                            viewModel.searchNow()
+                                            searchFocused = false
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (suggestion != suggestions.last()) {
+                                    HorizontalDivider()
+                                }
+                            }
+                        }
                     }
                 }
-            )
+            }
 
             when {
                 state.isLoading && state.changes.isEmpty() -> {
