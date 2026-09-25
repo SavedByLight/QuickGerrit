@@ -5,13 +5,16 @@ import androidx.compose.foundation.layout.*
 // Arrangement via layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -19,6 +22,7 @@ import com.quickgerrit.app.data.model.ChangeInfo
 import com.quickgerrit.app.update.AppUpdater
 import com.quickgerrit.app.ui.theme.rememberCodeColors
 import com.quickgerrit.app.ui.update.AutoUpdateChecker
+import kotlinx.coroutines.flow.collect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,6 +142,26 @@ fun ChangesScreen(
 
             // Live search with operator suggestions (refreshes while typing)
             var searchFocused by remember { mutableStateOf(false) }
+            // Hide suggestion dropdown once the user starts scrolling the list
+            // (especially with an empty query) so it doesn't block the results.
+            var suggestionsDismissed by remember { mutableStateOf(false) }
+            val focusManager = LocalFocusManager.current
+            val listState = rememberLazyListState()
+
+            // Dismiss suggestions as soon as the user scrolls the changes list.
+            // With an empty search box, also clear focus so the dropdown stays gone.
+            LaunchedEffect(listState, state.search) {
+                snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+                    if (scrolling) {
+                        suggestionsDismissed = true
+                        if (state.search.isBlank()) {
+                            searchFocused = false
+                            focusManager.clearFocus()
+                        }
+                    }
+                }
+            }
+
             val suggestions = remember(state.search) {
                 val q = state.search.trim().lowercase()
                 if (q.isEmpty()) ChangesViewModel.QUERY_SUGGESTIONS.take(8)
@@ -145,16 +169,27 @@ fun ChangesScreen(
                     it.lowercase().contains(q) || q.contains(it.lowercase().substringBefore(':'))
                 }.take(8)
             }
-            val showSuggestions = searchFocused && suggestions.isNotEmpty() &&
+            val showSuggestions = searchFocused &&
+                !suggestionsDismissed &&
+                suggestions.isNotEmpty() &&
                 (state.search.isBlank() || suggestions.any { !it.equals(state.search, ignoreCase = true) })
 
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                 OutlinedTextField(
                     value = state.search,
-                    onValueChange = { viewModel.setSearch(it) },
+                    onValueChange = {
+                        viewModel.setSearch(it)
+                        // Typing again re-enables suggestions after a scroll dismiss
+                        suggestionsDismissed = false
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .onFocusChanged { searchFocused = it.isFocused },
+                        .onFocusChanged { focusState ->
+                            searchFocused = focusState.isFocused
+                            // Only re-show suggestions on focus if the user is actively
+                            // interacting with the field (not after a scroll dismiss).
+                            // Typing is what reliably re-enables them.
+                        },
                     placeholder = { Text("Search query (live) — e.g. owner:self, project:…") },
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
@@ -173,6 +208,8 @@ fun ChangesScreen(
                                 IconButton(onClick = {
                                     viewModel.setSearch("")
                                     viewModel.searchNow()
+                                    suggestionsDismissed = true
+                                    focusManager.clearFocus()
                                 }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Clear search")
                                 }
@@ -201,6 +238,8 @@ fun ChangesScreen(
                                             viewModel.setSearch(suggestion)
                                             viewModel.searchNow()
                                             searchFocused = false
+                                            suggestionsDismissed = true
+                                            focusManager.clearFocus()
                                         }
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                     style = MaterialTheme.typography.bodyMedium
@@ -236,6 +275,7 @@ fun ChangesScreen(
                 }
                 else -> {
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
