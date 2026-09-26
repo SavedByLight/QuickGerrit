@@ -81,7 +81,6 @@ fun ChangeDetailScreen(
                     modifier = Modifier.padding(padding).fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
-                    beyondBoundsItemCount = 4
                 ) {
                     item {
                         HeaderSection(change = change, baseUrl = state.baseUrl, onCopied = { viewModel.showSnackbar(it) })

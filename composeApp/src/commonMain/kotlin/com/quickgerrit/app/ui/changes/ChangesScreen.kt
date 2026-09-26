@@ -282,8 +282,6 @@ fun ChangesScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        // Prefetch past the viewport for smoother flings on high-refresh panels.
-                        beyondBoundsItemCount = 6
                     ) {
                         items(
                             items = state.changes,

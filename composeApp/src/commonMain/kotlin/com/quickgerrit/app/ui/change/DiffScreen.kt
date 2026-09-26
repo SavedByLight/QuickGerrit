@@ -204,7 +204,6 @@ private fun UnifiedDiffView(
             .fillMaxSize()
             .padding(8.dp),
         contentPadding = PaddingValues(bottom = 24.dp),
-        beyondBoundsItemCount = 12
     ) {
         itemsIndexed(
             items = lines,
@@ -231,7 +230,6 @@ private fun SideBySideDiffView(
             .fillMaxSize()
             .padding(4.dp),
         contentPadding = PaddingValues(bottom = 24.dp),
-        beyondBoundsItemCount = 12
     ) {
         itemsIndexed(
             items = left,

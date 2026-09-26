@@ -278,7 +278,6 @@ fun ChangesScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        beyondBoundsItemCount = 6
                     ) {
                         items(
                             items = state.changes,
