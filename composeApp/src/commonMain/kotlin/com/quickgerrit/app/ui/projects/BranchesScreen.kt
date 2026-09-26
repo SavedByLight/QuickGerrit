@@ -108,10 +108,12 @@ fun BranchesScreen(
                 }
                 else -> {
                     LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        beyondBoundsItemCount = 6
                     ) {
-                        item {
+                        item(key = "count", contentType = "header") {
                             Text(
                                 "${filtered.size} branch(es)",
                                 style = MaterialTheme.typography.labelMedium,
@@ -119,7 +121,11 @@ fun BranchesScreen(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                         }
-                        items(filtered, key = { it.ref.ifBlank { it.shortName } }) { branch ->
+                        items(
+                            items = filtered,
+                            key = { it.ref.ifBlank { it.shortName } },
+                            contentType = { "branch" }
+                        ) { branch ->
                             BranchCard(branch)
                         }
                     }
@@ -151,7 +157,12 @@ fun BranchesScreen(
 
 @Composable
 private fun BranchCard(branch: BranchInfo) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 1.dp,
+        shadowElevation = 0.dp
+    ) {
         Row(
             Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -168,16 +179,15 @@ private fun BranchCard(branch: BranchInfo) {
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleMedium
                 )
-                SelectionContainer {
-                    Text(
-                        branch.revision,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                // Plain Text is cheaper than SelectionContainer during fling.
+                Text(
+                    branch.revision,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 if (branch.ref.isNotBlank() && branch.ref != branch.shortName) {
                     Text(
                         branch.ref,

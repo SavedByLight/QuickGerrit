@@ -93,14 +93,20 @@ fun ProjectsScreen(
                     )
                 }
                 else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    beyondBoundsItemCount = 6
                 ) {
-                    items(filtered, key = { it.id.ifBlank { it.name } }) { project ->
+                    items(
+                        items = filtered,
+                        key = { it.id.ifBlank { it.name } },
+                        contentType = { "project" }
+                    ) { project ->
                         ProjectCard(
                             project = project,
-                            onOpenBranches = { onOpenBranches(project.name) },
-                            onCreateChange = { createForProject = project.name }
+                            onOpenBranches = onOpenBranches,
+                            onCreateChange = { createForProject = it }
                         )
                     }
                 }
@@ -164,13 +170,22 @@ fun ProjectsScreen(
 @Composable
 private fun ProjectCard(
     project: ProjectInfo,
-    onOpenBranches: () -> Unit,
-    onCreateChange: () -> Unit
+    onOpenBranches: (String) -> Unit,
+    onCreateChange: (String) -> Unit
 ) {
-    Card(
+    val latestOpen by rememberUpdatedState(onOpenBranches)
+    val latestCreate by rememberUpdatedState(onCreateChange)
+    val name = project.name
+    val onOpen = remember(name) { { latestOpen(name) } }
+    val onCreate = remember(name) { { latestCreate(name) } }
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenBranches)
+            .clickable(onClick = onOpen),
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 1.dp,
+        shadowElevation = 0.dp
     ) {
         Row(
             Modifier.padding(14.dp),
@@ -181,7 +196,7 @@ private fun ProjectCard(
             Column(Modifier.weight(1f)) {
                 Text(project.name, fontWeight = FontWeight.SemiBold)
                 project.description?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall)
+                    Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 }
                 project.state?.let {
                     Text(it, style = MaterialTheme.typography.labelSmall)
@@ -192,7 +207,7 @@ private fun ProjectCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(onClick = onCreateChange) {
+            IconButton(onClick = onCreate) {
                 Icon(
                     Icons.Default.Add,
                     contentDescription = "Create change",

@@ -1,8 +1,10 @@
 package com.quickgerrit.app.data.model
 
+import androidx.compose.runtime.Immutable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+@Immutable
 @Serializable
 data class AccountInfo(
     @SerialName("_account_id") val accountId: Int = 0,
@@ -19,6 +21,7 @@ data class AvatarInfo(
     val height: Int? = null
 )
 
+@Immutable
 @Serializable
 data class ChangeInfo(
     val id: String = "",
@@ -49,6 +52,7 @@ data class ChangeInfo(
     @SerialName("_more_changes") val moreChanges: Boolean? = null
 )
 
+@Immutable
 @Serializable
 data class LabelInfo(
     val approved: AccountInfo? = null,
@@ -136,6 +140,7 @@ data class ActionInfo(
     val enabled: Boolean? = null
 )
 
+@Immutable
 @Serializable
 data class ProjectInfo(
     val id: String = "",
@@ -147,6 +152,7 @@ data class ProjectInfo(
 )
 
 /** Gerrit branch from GET /projects/{project}/branches/. */
+@Immutable
 @Serializable
 data class BranchInfo(
     val ref: String = "",

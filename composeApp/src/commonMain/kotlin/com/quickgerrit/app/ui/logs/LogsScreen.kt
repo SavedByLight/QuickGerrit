@@ -191,9 +191,14 @@ fun LogsScreen(onBack: () -> Unit) {
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        beyondBoundsItemCount = 8
                     ) {
-                        items(filtered, key = { it.id }) { entry ->
+                        items(
+                            items = filtered,
+                            key = { it.id },
+                            contentType = { "log" }
+                        ) { entry ->
                             LogRow(entry)
                         }
                     }

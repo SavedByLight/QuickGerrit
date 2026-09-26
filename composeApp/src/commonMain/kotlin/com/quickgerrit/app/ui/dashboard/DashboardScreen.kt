@@ -177,12 +177,13 @@ fun DashboardScreen(
                             else -> {
                                 items(
                                     items = section.changes,
-                                    key = { "${section.def.id}_${it.id}" }
+                                    key = { "${section.def.id}_${it.id}" },
+                                    contentType = { "change" }
                                 ) { change ->
                                     Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                                         ChangeCard(
                                             change = change,
-                                            onClick = { onOpenChange(change.id) }
+                                            onOpen = onOpenChange
                                         )
                                     }
                                 }

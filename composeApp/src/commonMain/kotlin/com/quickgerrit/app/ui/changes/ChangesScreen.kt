@@ -148,17 +148,20 @@ fun ChangesScreen(
             val focusManager = LocalFocusManager.current
             val listState = rememberLazyListState()
 
-            // Dismiss suggestions as soon as the user scrolls the changes list.
-            // With an empty search box, also clear focus so the dropdown stays gone.
-            LaunchedEffect(listState, state.search) {
+            // Dismiss suggestions once when scroll starts — avoid state writes every frame
+            // (those recompositions are a major source of scroll jank).
+            val searchIsBlank by rememberUpdatedState(state.search.isBlank())
+            LaunchedEffect(listState) {
+                var wasScrolling = false
                 snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-                    if (scrolling) {
+                    if (scrolling && !wasScrolling) {
                         suggestionsDismissed = true
-                        if (state.search.isBlank()) {
+                        if (searchIsBlank) {
                             searchFocused = false
                             focusManager.clearFocus()
                         }
                     }
+                    wasScrolling = scrolling
                 }
             }
 
@@ -276,13 +279,23 @@ fun ChangesScreen(
                 else -> {
                     LazyColumn(
                         state = listState,
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        // Prefetch past the viewport for smoother flings on high-refresh panels.
+                        beyondBoundsItemCount = 6
                     ) {
-                        items(state.changes, key = { it.id }) { change ->
-                            ChangeCard(change = change, onClick = { onOpenChange(change.id) })
+                        items(
+                            items = state.changes,
+                            key = { it.id },
+                            contentType = { "change" }
+                        ) { change ->
+                            ChangeCard(
+                                change = change,
+                                onOpen = onOpenChange
+                            )
                         }
-                        item {
+                        item(key = "footer", contentType = "footer") {
                             Column(
                                 Modifier
                                     .fillMaxWidth()
@@ -447,16 +460,42 @@ private fun EmptyAccountsPrompt(onOpenAccounts: () -> Unit) {
 }
 
 @Composable
-internal fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
+internal fun ChangeCard(change: ChangeInfo, onOpen: (String) -> Unit) {
     val codeColors = rememberCodeColors()
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(1.dp)
+    // Cache derived strings so fling/scroll does not rebuild AnnotatedString / maps each frame.
+    val stats = remember(change.insertions, change.deletions, codeColors) {
+        codeColors.insertionsDeletionsText(change.insertions, change.deletions)
+    }
+    val projectBranch = remember(change.project, change.branch) {
+        "${change.project} · ${change.branch}"
+    }
+    val ownerName = remember(change.owner) {
+        change.owner?.let { it.displayName ?: it.name ?: "Unknown" }
+    }
+    val labelPairs = remember(change.labels) {
+        change.labels?.mapNotNull { (name, info) ->
+            val value = info.all?.maxOfOrNull { it.value ?: 0 } ?: info.value
+            if (value != null && value != 0) name to value else null
+        }.orEmpty()
+    }
+    val numberLabel = remember(change.number) { "#${change.number}" }
+    // Stable click handler — parent lambdas change identity often and would force recomposition.
+    val latestOnOpen by rememberUpdatedState(onOpen)
+    val onClick = remember(change.id) { { latestOnOpen(change.id) } }
+
+    // Flat Surface avoids per-frame shadow redraws that cause scroll jitter.
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 1.dp,
+        shadowElevation = 0.dp
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "#${change.number}",
+                    numberLabel,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
@@ -464,10 +503,7 @@ internal fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 StatusChip(change.status)
                 Spacer(Modifier.weight(1f))
-                Text(
-                    codeColors.insertionsDeletionsText(change.insertions, change.deletions),
-                    style = MaterialTheme.typography.labelSmall
-                )
+                Text(stats, style = MaterialTheme.typography.labelSmall)
             }
             Spacer(Modifier.height(6.dp))
             Text(
@@ -478,31 +514,33 @@ internal fun ChangeCard(change: ChangeInfo, onClick: () -> Unit) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "${change.project} · ${change.branch}",
+                projectBranch,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            change.owner?.let { owner ->
-                Text(
-                    owner.displayName ?: owner.name ?: "Unknown",
-                    style = MaterialTheme.typography.bodySmall
-                )
+            ownerName?.let { name ->
+                Text(name, style = MaterialTheme.typography.bodySmall)
             }
-            // Simple labels preview
-            change.labels?.let { labels ->
-                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    labels.forEach { (name, info) ->
-                        val value = info.all?.maxOfOrNull { it.value ?: 0 } ?: info.value
-                        if (value != null && value != 0) {
-                            AssistChip(
-                                onClick = {},
-                                label = { Text("$name $value") },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = when {
-                                        value > 0 -> MaterialTheme.colorScheme.secondaryContainer
-                                        else -> MaterialTheme.colorScheme.errorContainer
-                                    }
-                                )
+            // Lightweight label chips (Surface + Text) — AssistChip is too heavy for long lists.
+            if (labelPairs.isNotEmpty()) {
+                Row(
+                    Modifier.padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    labelPairs.forEach { (name, value) ->
+                        val container = if (value > 0) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.errorContainer
+                        }
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = container
+                        ) {
+                            Text(
+                                "$name $value",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall
                             )
                         }
                     }
