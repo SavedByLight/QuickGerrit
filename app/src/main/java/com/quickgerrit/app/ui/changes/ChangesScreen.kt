@@ -147,17 +147,19 @@ fun ChangesScreen(
             val focusManager = LocalFocusManager.current
             val listState = rememberLazyListState()
 
-            // Dismiss suggestions as soon as the user scrolls the changes list.
-            // With an empty search box, also clear focus so the dropdown stays gone.
-            LaunchedEffect(listState, state.search) {
+            // Dismiss suggestions once when scroll starts — avoid state writes every frame
+            // (recomposition mid-fling is a major source of jank on mid-range devices).
+            val searchIsBlank by rememberUpdatedState(state.search.isBlank())
+            LaunchedEffect(listState) {
+                var wasScrolling = false
                 snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-                    if (scrolling) {
+                    if (scrolling && !wasScrolling) {
                         suggestionsDismissed = true
-                        if (state.search.isBlank()) {
+                        if (searchIsBlank) {
                             searchFocused = false
-                            focusManager.clearFocus()
                         }
                     }
+                    wasScrolling = scrolling
                 }
             }
 

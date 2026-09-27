@@ -150,6 +150,8 @@ fun ChangesScreen(
 
             // Dismiss suggestions once when scroll starts — avoid state writes every frame
             // (those recompositions are a major source of scroll jank).
+            // Do not clearFocus() here: IME/focus teardown mid-fling is expensive on mid-range GPUs
+            // (e.g. Pixel 10a) and shows up as scroll jitter.
             val searchIsBlank by rememberUpdatedState(state.search.isBlank())
             LaunchedEffect(listState) {
                 var wasScrolling = false
@@ -158,7 +160,6 @@ fun ChangesScreen(
                         suggestionsDismissed = true
                         if (searchIsBlank) {
                             searchFocused = false
-                            focusManager.clearFocus()
                         }
                     }
                     wasScrolling = scrolling
