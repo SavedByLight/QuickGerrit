@@ -134,9 +134,12 @@ class ChangesViewModel(private val repo: GerritRepository) : PlatformViewModel()
                 AppLog.d("load skipped – no active account")
                 return@launch
             }
+            // Soft refresh when list is already populated: avoid isLoading=true so the
+            // screen does not recompose every visible card (hurts scroll on mid-range GPUs).
+            val hadResults = _ui.value.changes.isNotEmpty()
             _ui.update {
                 it.copy(
-                    isLoading = true,
+                    isLoading = !hadResults,
                     error = null,
                     nextStart = 0,
                     hasMore = false

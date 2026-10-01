@@ -455,34 +455,35 @@ private fun EmptyAccountsPrompt(onOpenAccounts: () -> Unit) {
 @Composable
 internal fun ChangeCard(change: ChangeInfo, onOpen: (String) -> Unit) {
     val codeColors = rememberCodeColors()
-    val stats = remember(change.insertions, change.deletions, codeColors) {
-        codeColors.insertionsDeletionsText(change.insertions, change.deletions)
-    }
+    // Keep row work minimal — mid-range GPUs (Pixel 10a) struggle with heavy cards during fling.
     val projectBranch = remember(change.project, change.branch) {
         "${change.project} · ${change.branch}"
     }
     val ownerName = remember(change.owner) {
         change.owner?.let { it.displayName ?: it.name ?: "Unknown" }
     }
+    // Cap labels: many Surface chips per row is a major scroll cost on weaker devices.
     val labelPairs = remember(change.labels) {
         change.labels?.mapNotNull { (name, info) ->
             val value = info.all?.maxOfOrNull { it.value ?: 0 } ?: info.value
             if (value != null && value != 0) name to value else null
-        }.orEmpty()
+        }.orEmpty().take(2)
     }
     val numberLabel = remember(change.number) { "#${change.number}" }
     val latestOnOpen by rememberUpdatedState(onOpen)
     val onClick = remember(change.id) { { latestOnOpen(change.id) } }
 
+    // No elevation — shadows/tonal layers are expensive while scrolling.
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.medium,
-        tonalElevation = 1.dp,
-        shadowElevation = 0.dp
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     numberLabel,
@@ -493,27 +494,44 @@ internal fun ChangeCard(change: ChangeInfo, onOpen: (String) -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 StatusChip(change.status)
                 Spacer(Modifier.weight(1f))
-                Text(stats, style = MaterialTheme.typography.labelSmall)
+                // Plain Text pair instead of AnnotatedString build each compose.
+                Text(
+                    "+${change.insertions}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = codeColors.addedFg
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "−${change.deletions}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = codeColors.removedFg
+                )
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 change.subject,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(4.dp))
             Text(
                 projectBranch,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             ownerName?.let { name ->
-                Text(name, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    name,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             if (labelPairs.isNotEmpty()) {
                 Row(
-                    Modifier.padding(top = 6.dp),
+                    Modifier.padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     labelPairs.forEach { (name, value) ->
@@ -528,7 +546,7 @@ internal fun ChangeCard(change: ChangeInfo, onOpen: (String) -> Unit) {
                         ) {
                             Text(
                                 "$name $value",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
